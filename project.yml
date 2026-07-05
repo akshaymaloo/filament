@@ -1,0 +1,76 @@
+name: Filament
+
+options:
+  bundleIdPrefix: com.filament3d
+  deploymentTarget:
+    macOS: "14.0"
+  createIntermediateGroups: true
+
+settings:
+  base:
+    SWIFT_VERSION: "5.9"
+    MARKETING_VERSION: "1.0"
+    CURRENT_PROJECT_VERSION: "1"
+    CODE_SIGN_STYLE: Automatic
+    DEVELOPMENT_TEAM: ""
+    ENABLE_HARDENED_RUNTIME: YES
+    GENERATE_INFOPLIST_FILE: NO
+  configs:
+    Debug:
+      SWIFT_ACTIVE_COMPILATION_CONDITIONS: DEBUG
+
+packages:
+  ThreeMFKit:
+    path: .
+
+targets:
+  Filament:
+    type: application
+    platform: macOS
+    sources:
+      - path: App/Filament
+    dependencies:
+      - package: ThreeMFKit
+        product: ThreeMFKit
+      - target: ThumbnailExtension
+        embed: true
+      - target: PreviewExtension
+        embed: true
+    settings:
+      base:
+        INFOPLIST_FILE: App/Filament/Info.plist
+        CODE_SIGN_ENTITLEMENTS: App/Filament/Filament.entitlements
+        PRODUCT_BUNDLE_IDENTIFIER: com.filament3d.Filament
+        ENABLE_APP_SANDBOX: YES
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
+
+  ThumbnailExtension:
+    type: app-extension
+    platform: macOS
+    sources:
+      - path: Extensions/ThumbnailExtension
+    dependencies:
+      - package: ThreeMFKit
+        product: ThreeMFKit
+    settings:
+      base:
+        INFOPLIST_FILE: Extensions/ThumbnailExtension/Info.plist
+        CODE_SIGN_ENTITLEMENTS: Extensions/ThumbnailExtension/ThumbnailExtension.entitlements
+        PRODUCT_BUNDLE_IDENTIFIER: com.filament3d.Filament.ThumbnailExtension
+        ENABLE_APP_SANDBOX: YES
+
+  PreviewExtension:
+    type: app-extension
+    platform: macOS
+    sources:
+      - path: Extensions/PreviewExtension
+    dependencies:
+      - package: ThreeMFKit
+        product: ThreeMFKit
+    settings:
+      base:
+        INFOPLIST_FILE: Extensions/PreviewExtension/Info.plist
+        CODE_SIGN_ENTITLEMENTS: Extensions/PreviewExtension/PreviewExtension.entitlements
+        PRODUCT_BUNDLE_IDENTIFIER: com.filament3d.Filament.PreviewExtension
+        ENABLE_APP_SANDBOX: YES

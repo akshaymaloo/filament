@@ -1,0 +1,54 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  core:
+    name: ThreeMFKit (SwiftPM)
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Show toolchain
+        run: swift --version
+
+      - name: Build ThreeMFKit
+        run: swift build
+
+      - name: Run validation suite
+        run: swift run three-mf-validate
+
+      - name: Run XCTest suite
+        run: swift test
+
+  app:
+    name: App + Quick Look extensions (xcodebuild)
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate Xcode project
+        run: xcodegen generate
+
+      # Builds the app and both embedded extensions. Signing is disabled so the
+      # build succeeds on a runner with no code-signing identity; a Development
+      # Team is only needed to run a Quick Look extension on a real Mac.
+      - name: Build (no code signing)
+        run: |
+          xcodebuild build \
+            -project Filament.xcodeproj \
+            -scheme Filament \
+            -destination 'platform=macOS' \
+            -configuration Debug \
+            CODE_SIGNING_ALLOWED=NO
