@@ -108,17 +108,24 @@ public extension BuildPlate {
         let groundY = -halfExtent.z
 
         if style.showGroundPlane {
-            // SCNFloor is an (effectively) infinite plane, so there's no hard
-            // edge to the ground — only the soft contact shadow reads visually.
-            let floor = SCNFloor()
-            floor.reflectivity = 0
+            // A large flat plane acts as the ground/shadow catcher. (SCNFloor is
+            // avoided on purpose: it sets up a reflection render pass — the
+            // "FloorPass" — even with reflectivity 0, which errors every frame in
+            // the Quick Look preview's live renderer and forces continuous
+            // re-rendering, hanging previews of large meshes.)
+            let extent = CGFloat(max(simd_length(halfExtent) * 40, 200))
+            let plane = SCNPlane(width: extent, height: extent)
             let floorMaterial = SCNMaterial()
             floorMaterial.lightingModel = .physicallyBased
             floorMaterial.diffuse.contents = style.backgroundColor
             floorMaterial.roughness.contents = 1.0
             floorMaterial.metalness.contents = 0.0
-            floor.materials = [floorMaterial]
-            let floorNode = SCNNode(geometry: floor)
+            floorMaterial.isDoubleSided = true
+            plane.materials = [floorMaterial]
+            let floorNode = SCNNode(geometry: plane)
+            // SCNPlane lies in its local XY plane (facing +Z); rotate it flat so
+            // it faces up (+Y) at the model's base.
+            floorNode.eulerAngles.x = -.pi / 2
             floorNode.position = SCNVector3(0, groundY, 0)
             floorNode.castsShadow = false
             scene.rootNode.addChildNode(floorNode)
