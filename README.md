@@ -9,6 +9,12 @@
   Select a file in Finder, press <b>Space</b>, and get an interactive 3D preview — no slicer required.
 </p>
 
+<p align="center">
+  <a href="https://ko-fi.com/akshaymaloo"><img src="https://img.shields.io/badge/Ko--fi-Support%20development-FF5E5B?logo=ko-fi&logoColor=white" alt="Support on Ko-fi"></a>
+  <img src="https://img.shields.io/badge/macOS-14%2B-black?logo=apple" alt="macOS 14+">
+  <img src="https://img.shields.io/badge/license-MIT-blue" alt="MIT license">
+</p>
+
 ---
 
 <p align="center">
@@ -40,6 +46,8 @@ Filament adds **thumbnails** and **interactive Quick Look previews** for:
   weight, and printer for 3MF.
 - **Open in the app.** Double-click a supported file (or drag-and-drop) to open
   it in the Filament window.
+- **Default opener.** `install.sh` makes Filament the default app for `.3mf`
+  and `.stl` (overriding Preview for STL); opt out with `--no-defaults`.
 - **Privacy-friendly & offline.** Everything runs locally — no network, no
   telemetry.
 
@@ -189,6 +197,19 @@ swift test                  # XCTest suite (requires a full Xcode toolchain)
 Issues and pull requests are welcome. Please keep `ThreeMFKit` dependency-free,
 and make sure `swift run three-mf-validate` and `swift build` pass before
 opening a PR (CI runs these plus an Xcode build on every push).
+
+## Support
+
+Filament is free and open source. If you find it useful, you can support its
+development:
+
+<a href="https://ko-fi.com/akshaymaloo"><img src="https://ko-fi.com/img/githubbutton_sm.svg" alt="Support me on Ko-fi" height="36"></a>
+
+Today the app is **ad-hoc "signed to run locally"**, so you build it yourself
+with `install.sh`. Donations go toward an **Apple Developer Program** membership
+so future releases can be **notarized** — no Gatekeeper warnings and a
+ready-to-run download — and, eventually, published on the **Mac App Store**.
+Thank you! 🙏
 
 ## License
 

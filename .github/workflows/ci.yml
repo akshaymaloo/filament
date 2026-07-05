@@ -13,37 +13,39 @@ concurrency:
 jobs:
   core:
     name: ThreeMFKit (SwiftPM)
-    runs-on: macos-14
+    # macOS 15 ships Xcode 16, which can read the project format XcodeGen
+    # generates (objectVersion 77 requires Xcode 16+).
+    runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
-
+      - name: Select latest stable Xcode
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: latest-stable
       - name: Show toolchain
         run: swift --version
-
       - name: Build ThreeMFKit
         run: swift build
-
       - name: Run validation suite
         run: swift run three-mf-validate
-
       - name: Run XCTest suite
         run: swift test
 
   app:
     name: App + Quick Look extensions (xcodebuild)
-    runs-on: macos-14
+    runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
-
+      - name: Select latest stable Xcode
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: latest-stable
       - name: Install XcodeGen
         run: brew install xcodegen
-
       - name: Generate Xcode project
         run: xcodegen generate
-
-      # Builds the app and both embedded extensions. Signing is disabled so the
-      # build succeeds on a runner with no code-signing identity; a Development
-      # Team is only needed to run a Quick Look extension on a real Mac.
+      # Signing is disabled so the build succeeds on a runner with no code-signing
+      # identity; a Development Team is only needed to run the extensions on a Mac.
       - name: Build (no code signing)
         run: |
           xcodebuild build \

@@ -61,6 +61,18 @@
 				<string>com.filament3d.3mf</string>
 			</array>
 			<key>LSHandlerRank</key>
+			<string>Owner</string>
+		</dict>
+		<dict>
+			<key>CFBundleTypeName</key>
+			<string>STL Model</string>
+			<key>CFBundleTypeRole</key>
+			<string>Viewer</string>
+			<key>LSItemContentTypes</key>
+			<array>
+				<string>public.standard-tesselated-geometry-format</string>
+			</array>
+			<key>LSHandlerRank</key>
 			<string>Default</string>
 		</dict>
 		<dict>
@@ -70,7 +82,6 @@
 			<string>Viewer</string>
 			<key>LSItemContentTypes</key>
 			<array>
-				<string>public.standard-tesselated-geometry-format</string>
 				<string>public.geometry-definition-format</string>
 				<string>public.polygon-file-format</string>
 			</array>

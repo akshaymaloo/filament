@@ -45,6 +45,15 @@ if [ "${1:-}" = "--uninstall" ]; then
   exit 0
 fi
 
+# --- option parsing ----------------------------------------------------------
+SET_DEFAULTS=1
+for arg in "$@"; do
+  case "$arg" in
+    --no-defaults) SET_DEFAULTS=0 ;;
+    -*) die "unknown option: $arg (use --no-defaults or --uninstall)" ;;
+  esac
+done
+
 # --- 1. prerequisites --------------------------------------------------------
 step "Checking prerequisites"
 
@@ -135,6 +144,16 @@ if [ -n "$registered" ]; then
   pluginkit -m 2>/dev/null | grep -i "filament" | sed 's/^/      /'
 else
   warn "Extensions not listed yet — they may take a moment. Try re-running, or log out/in once."
+fi
+
+# --- 7. set default app for 3MF + STL ---------------------------------------
+if [ "$SET_DEFAULTS" = "1" ]; then
+  step "Setting Filament as the default app for 3MF and STL"
+  if xcrun swift "$REPO_ROOT/scripts/set-default-apps.swift" "$INSTALL_DIR/$APP_NAME"; then
+    info "Double-clicking a .3mf or .stl now opens Filament. (Skip with --no-defaults.)"
+  else
+    warn "Could not set defaults automatically. In Finder: select a file, Get Info, 'Open with' > Filament > Change All."
+  fi
 fi
 
 printf "\n%s%sFilament is installed.%s\n" "$BOLD" "$GREEN" "$RESET"
