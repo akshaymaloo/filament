@@ -53,10 +53,35 @@ Filament adds **thumbnails** and **interactive Quick Look previews** for:
 
 ## Build & install
 
+### Quick install (one command)
+
+```bash
+git clone https://github.com/<your-org-or-user>/filament.git
+cd filament
+./install.sh
+```
+
+`install.sh` checks prerequisites (Xcode, and XcodeGen — installed via Homebrew
+if needed), generates the Xcode project, builds a Release, **signs it to run
+locally** (no Apple Developer account required), installs it to
+`~/Applications`, and registers the Quick Look extensions. To build and sign
+with your own Apple Developer team instead, pass `DEVELOPMENT_TEAM`:
+
+```bash
+DEVELOPMENT_TEAM=ABCDE12345 ./install.sh
+```
+
+Uninstall any time with `./install.sh --uninstall`.
+
+> If Space-bar previews don't show up right after install, log out and back in
+> once so Finder reloads the Quick Look extensions.
+
+### Build in Xcode (manual)
+
 The Xcode project is generated from `project.yml` by XcodeGen (it is not checked
 in), so the first step is always to generate it.
 
-### 1. Clone and generate the project
+#### 1. Clone and generate the project
 
 ```bash
 git clone https://github.com/<your-org-or-user>/filament.git
@@ -66,7 +91,7 @@ xcodegen generate          # creates Filament.xcodeproj
 open Filament.xcodeproj
 ```
 
-### 2. Set a signing team
+#### 2. Set a signing team
 
 macOS only loads a Quick Look **app extension** if the containing app is
 code-signed and registered with Launch Services. In Xcode:
@@ -84,7 +109,7 @@ The bundle identifier prefix is `com.filament3d` (e.g.
 `com.filament3d.Filament`). Change it to your own reverse-DNS identifier if you
 plan to distribute the app.
 
-### 3. Build & run once
+#### 3. Build & run once
 
 Build and run the **Filament** app target (⌘R) at least once. Launching the app
 registers its embedded Quick Look extensions with the system.
@@ -92,7 +117,7 @@ registers its embedded Quick Look extensions with the system.
 For system-wide Finder integration, move the built app to `/Applications` (or
 `~/Applications`) and launch it once from there.
 
-### 4. Verify Quick Look
+#### 4. Verify Quick Look
 
 ```bash
 # Reset the Quick Look daemon so it picks up the newly registered extensions
