@@ -139,6 +139,28 @@ pluginkit -m | grep -i filament
 Then select a `.3mf`, `.stl`, `.obj`, or `.ply` file in Finder and press
 **Space** for the preview, or view it in an icon-view window for the thumbnail.
 
+## Troubleshooting
+
+**"…preview extension is not found" / Quick Look not working.** This usually
+means Launch Services has a **stale registration** pointing at a build copy of
+the app that no longer exists (Xcode registers the app at its build location on
+every build). Re-running `./install.sh` fixes this automatically — it
+unregisters stale/build copies and registers only the installed app. To fix it
+manually, unregister every copy and re-register the installed one:
+
+```bash
+LSREG=/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/LaunchServices.framework/Versions/A/Support/lsregister
+# List all registered copies (delete-path ones are stale):
+"$LSREG" -dump | grep -Eo '/.*Filament\.app' | sort -u
+# Unregister a stale path, then re-register the installed app and reset QL:
+"$LSREG" -u "/path/to/stale/Filament.app"
+"$LSREG" -f "$HOME/Applications/Filament.app"
+qlmanage -r && qlmanage -r cache
+```
+
+If previews still don't appear, log out and back in so Finder reloads the
+Quick Look extensions.
+
 ## Command-line build (CI / no signing)
 
 To verify the app and both extensions compile and link **without** a signing

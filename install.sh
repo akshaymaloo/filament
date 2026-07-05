@@ -125,6 +125,23 @@ info "Installed $INSTALL_DIR/$APP_NAME"
 
 # --- 5. register + reset Quick Look -----------------------------------------
 step "Registering the app and its Quick Look extensions"
+# Xcode's build step registers the app at its *build* location with Launch
+# Services. If that copy is left registered, deleting the build directory
+# leaves a stale registration that can shadow the installed app and cause
+# Finder to report "preview extension is not found". Unregister the build copy
+# (and any other stale Filament copies that no longer exist on disk), then
+# register only the installed app.
+"$LSREGISTER" -u "$APP_SRC" >/dev/null 2>&1 || true
+while IFS= read -r stale; do
+  [ -n "$stale" ] || continue
+  case "$stale" in
+    "$INSTALL_DIR/$APP_NAME") ;;                 # keep the installed copy
+    *) [ -e "$stale" ] || "$LSREGISTER" -u "$stale" >/dev/null 2>&1 || true ;;
+  esac
+done < <("$LSREGISTER" -dump 2>/dev/null \
+          | sed -n 's/^[[:space:]]*path:[[:space:]]*\(.*Filament\.app\) (0x.*/\1/p' \
+          | sort -u)
+
 "$LSREGISTER" -f "$INSTALL_DIR/$APP_NAME" >/dev/null 2>&1 || true
 # Launching the app once is what makes macOS load its embedded extensions.
 open "$INSTALL_DIR/$APP_NAME"
