@@ -39,6 +39,11 @@ func sceneContainsCamera(_ node: SCNNode) -> Bool {
     if node.camera != nil { return true }
     return node.childNodes.contains { sceneContainsCamera($0) }
 }
+
+func forEachNode(_ node: SCNNode, _ body: (SCNNode) -> Void) {
+    body(node)
+    for child in node.childNodes { forEachNode(child, body) }
+}
 #endif
 
 print("ThreeMFKit \(ThreeMFKit.version) validation suite")
@@ -191,6 +196,21 @@ run("SceneKit scene construction") {
         "SceneKit: previewCameraNode(.twoD) uses orthographic projection",
         camera2D?.camera?.usesOrthographicProjection == true
     )
+
+    // Regression checks: the ground/shadow plane must not use SCNFloor (its
+    // reflection pass errors every frame and hangs previews of large meshes),
+    // and must be single-sided (a double-sided plane greys out the model when
+    // the camera orbits below it).
+    var usesSCNFloor = false
+    var planeMaterial: SCNMaterial? = nil
+    forEachNode(scene.rootNode) { node in
+        guard let geometry = node.geometry else { return }
+        if geometry is SCNFloor { usesSCNFloor = true }
+        if geometry is SCNPlane, planeMaterial == nil { planeMaterial = geometry.firstMaterial }
+    }
+    check("SceneKit: does not use SCNFloor (avoids FloorPass hang)", !usesSCNFloor)
+    check("SceneKit: ground plane exists", planeMaterial != nil)
+    check("SceneKit: ground plane is single-sided (no occlusion from below)", planeMaterial?.isDoubleSided == false)
 }
 #endif
 

@@ -120,7 +120,10 @@ public extension BuildPlate {
             floorMaterial.diffuse.contents = style.backgroundColor
             floorMaterial.roughness.contents = 1.0
             floorMaterial.metalness.contents = 0.0
-            floorMaterial.isDoubleSided = true
+            // Single-sided so the plane is back-face culled (invisible) when the
+            // camera orbits below the model — otherwise this large plane fills
+            // the view and greys out the model's underside.
+            floorMaterial.isDoubleSided = false
             plane.materials = [floorMaterial]
             let floorNode = SCNNode(geometry: plane)
             // SCNPlane lies in its local XY plane (facing +Z); rotate it flat so
