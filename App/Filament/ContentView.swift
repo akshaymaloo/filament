@@ -81,7 +81,6 @@ private struct LoadedDocumentView: View {
     let document: ThreeMFDocument
     @EnvironmentObject private var model: DocumentModel
     @Environment(\.colorScheme) private var colorScheme
-    @State private var cameraMode: PreviewCameraMode = .threeD
     @State private var useModelColors = true
 
     private var selectedPlate: BuildPlate {
@@ -95,7 +94,6 @@ private struct LoadedDocumentView: View {
             ZStack(alignment: .topTrailing) {
                 SceneKitView(
                     plate: selectedPlate,
-                    cameraMode: cameraMode,
                     useModelColors: useModelColors,
                     isDark: colorScheme == .dark,
                     documentToken: model.loadGeneration
@@ -103,38 +101,16 @@ private struct LoadedDocumentView: View {
                 .ignoresSafeArea()
                 InfoPanel(plate: selectedPlate, unit: document.unit)
                     .padding(16)
-                HStack(spacing: 10) {
-                    CameraModePicker(cameraMode: $cameraMode)
-                    if selectedPlate.hasColorData {
-                        ColorModePicker(useModelColors: $useModelColors)
-                    }
+                if selectedPlate.hasColorData {
+                    ColorModePicker(useModelColors: $useModelColors)
+                        .padding(16)
+                        .frame(maxWidth: .infinity, alignment: .leading)
                 }
-                .padding(16)
-                .frame(maxWidth: .infinity, alignment: .leading)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
 
             BottomBar(fileName: model.fileURL?.lastPathComponent, plates: document.plates, selectedIndex: $model.selectedPlateIndex)
         }
-    }
-}
-
-/// Small floating segmented control for switching between the perspective
-/// ("3D") and orthographic top-down ("2D") preview cameras.
-private struct CameraModePicker: View {
-    @Binding var cameraMode: PreviewCameraMode
-
-    var body: some View {
-        Picker("Camera", selection: $cameraMode) {
-            Text("2D").tag(PreviewCameraMode.twoD)
-            Text("3D").tag(PreviewCameraMode.threeD)
-        }
-        .labelsHidden()
-        .pickerStyle(.segmented)
-        .frame(width: 100)
-        .padding(6)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-        .shadow(color: .black.opacity(0.1), radius: 6, y: 2)
     }
 }
 

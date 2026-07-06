@@ -22,12 +22,9 @@ final class SceneKitTests: XCTestCase {
         XCTAssertTrue(hasGeometryNode)
         XCTAssertTrue(sceneContainsCamera(scene.rootNode))
 
-        let camera3D = scene.previewCameraNode(for: .threeD)
-        let camera2D = scene.previewCameraNode(for: .twoD)
+        let camera3D = scene.previewCameraNode
         XCTAssertNotNil(camera3D)
-        XCTAssertNotNil(camera2D)
         XCTAssertEqual(camera3D?.camera?.usesOrthographicProjection, false)
-        XCTAssertEqual(camera2D?.camera?.usesOrthographicProjection, true)
     }
 
     /// Regression: the shadow ground plane must not use `SCNFloor` (its

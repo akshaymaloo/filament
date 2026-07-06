@@ -50,6 +50,7 @@ final class ThumbnailProvider: QLThumbnailProvider {
         let scene = plate.makeScene()
         let renderer = SCNRenderer(device: device, options: nil)
         renderer.scene = scene
+        renderer.pointOfView = scene.previewCameraNode
 
         let pixelSize = CGSize(
             width: request.maximumSize.width * request.scale,

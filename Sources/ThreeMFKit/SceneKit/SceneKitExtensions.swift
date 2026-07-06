@@ -5,24 +5,11 @@ import simd
 import AppKit
 #endif
 
-/// Which camera a host should use for `SCNScene.previewCameraNode(for:)`.
-public enum PreviewCameraMode {
-    /// Perspective, isometric-ish camera named `"camera3D"`.
-    case threeD
-    /// Orthographic, front elevation camera named `"camera2D"`.
-    case twoD
-}
-
 public extension SCNScene {
-    /// Returns the named camera node (`"camera3D"` / `"camera2D"`) added by
+    /// Returns the interactive perspective camera node (`"camera3D"`) added by
     /// `BuildPlate.makeScene(style:)`, if present.
-    func previewCameraNode(for mode: PreviewCameraMode) -> SCNNode? {
-        let name: String
-        switch mode {
-        case .threeD: name = "camera3D"
-        case .twoD: name = "camera2D"
-        }
-        return rootNode.childNode(withName: name, recursively: true)
+    var previewCameraNode: SCNNode? {
+        rootNode.childNode(withName: "camera3D", recursively: true)
     }
 }
 
@@ -146,10 +133,9 @@ private func parseFilamentColor(_ hex: String, fallback: NSColor) -> NSColor {
 
 public extension BuildPlate {
     /// Builds a scene containing this plate's mesh (upright, Z-up rotated into
-    /// SceneKit's Y-up space), a pair of named cameras (perspective "camera3D"
-    /// and front-elevation orthographic "camera2D"), and soft studio lighting
-    /// with an optional ground-contact shadow and image-based environment
-    /// reflections.
+    /// SceneKit's Y-up space), a perspective camera ("camera3D") framed to fill
+    /// the viewport, and soft studio lighting with an optional ground-contact
+    /// shadow and image-based environment reflections.
     /// Construction only — no offscreen rendering is performed.
     func makeScene(style: PreviewStyle = .default) -> SCNScene {
         let scene = SCNScene()
@@ -279,27 +265,6 @@ public extension BuildPlate {
         camera3DNode.position = SCNVector3(distance, distance * 0.8, distance)
         camera3DNode.look(at: SCNVector3(0, 0, 0))
         scene.rootNode.addChildNode(camera3DNode)
-
-        // Orthographic front-elevation camera, looking along -Z toward the
-        // origin. The uprightRoot rotation (Rx(-90°)) maps model (x, y, z) to
-        // world (x, z, -y), so model width (X) reads as world X (image-right)
-        // and model height (Z, print height) reads as world Y (image-up) —
-        // i.e. this is a front view of the model as it sits on the print bed.
-        let camera2D = SCNCamera()
-        camera2D.usesOrthographicProjection = true
-        camera2D.zNear = 0.01
-        camera2D.zFar = Double(diagonal) * 10
-        camera2D.automaticallyAdjustsZRange = true
-        let frontHalfHeight = max(halfExtent.z, 1)
-        let frontHalfWidth = max(halfExtent.x, 1)
-        // 1 / 0.8 = 1.25 margin → the front elevation fills ~80% of the viewport.
-        camera2D.orthographicScale = Double(max(frontHalfHeight, frontHalfWidth)) * 1.25
-        let camera2DNode = SCNNode()
-        camera2DNode.name = "camera2D"
-        camera2DNode.camera = camera2D
-        camera2DNode.position = SCNVector3(0, 0, distance)
-        camera2DNode.look(at: SCNVector3(0, 0, 0), up: SCNVector3(0, 1, 0), localFront: SCNVector3(0, 0, -1))
-        scene.rootNode.addChildNode(camera2DNode)
 
         let ambientLight = SCNLight()
         ambientLight.type = .ambient

@@ -9,44 +9,33 @@ import AppKit
 /// extension, `SCNView`'s own scroll/pinch zoom handling is unreliable, so
 /// `scrollWheel`/`magnify` are overridden here to adjust the camera directly.
 public final class ModelSCNView: SCNView {
-    /// Per-camera-node reset state (keyed by node name, e.g. "camera3D"),
-    /// captured right after a scene is loaded so `resetView()` can undo any
-    /// orbit/pan/zoom the user applied.
-    private var initialStates: [String: (transform: SCNMatrix4, fov: CGFloat, ortho: Double)] = [:]
+    /// The camera's initial state, captured right after a scene is loaded so
+    /// `resetView()` can undo any orbit/pan/zoom the user applied.
+    private var initialTransform: SCNMatrix4?
+    private var initialFOV: CGFloat = 30
 
-    /// Sets the scene, configures interactive controls, captures reset state,
-    /// and applies the given camera mode.
-    public func display(scene newScene: SCNScene, mode: PreviewCameraMode) {
+    /// Sets the scene, configures interactive orbit controls, and captures the
+    /// reset state.
+    public func display(scene newScene: SCNScene) {
         scene = newScene
         allowsCameraControl = true
         backgroundColor = .clear
         antialiasingMode = .multisampling4X
         rendersContinuously = false
+        defaultCameraController.interactionMode = .orbitTurntable
 
-        initialStates.removeAll()
-        for cameraMode in [PreviewCameraMode.threeD, .twoD] {
-            guard let node = newScene.previewCameraNode(for: cameraMode), let camera = node.camera else { continue }
-            let name = node.name ?? ""
-            initialStates[name] = (transform: node.transform, fov: camera.fieldOfView, ortho: camera.orthographicScale)
+        if let node = newScene.previewCameraNode {
+            pointOfView = node
+            initialTransform = node.transform
+            initialFOV = node.camera?.fieldOfView ?? 30
         }
-
-        apply(mode: mode)
     }
 
-    /// Switches between the perspective ("3D") and orthographic front ("2D")
-    /// cameras and the matching interaction mode.
-    public func apply(mode: PreviewCameraMode) {
-        guard let node = scene?.previewCameraNode(for: mode) else { return }
-        pointOfView = node
-        defaultCameraController.interactionMode = (mode == .threeD) ? .orbitTurntable : .pan
-    }
-
-    /// Restores the current camera to its initial framing (undo orbit/pan/zoom).
+    /// Restores the camera to its initial framing (undo orbit/pan/zoom).
     public func resetView() {
-        guard let node = pointOfView, let camera = node.camera, let initial = initialStates[node.name ?? ""] else { return }
-        node.transform = initial.transform
-        camera.fieldOfView = initial.fov
-        camera.orthographicScale = initial.ortho
+        guard let node = pointOfView, let camera = node.camera, let transform = initialTransform else { return }
+        node.transform = transform
+        camera.fieldOfView = initialFOV
     }
 
     /// Explicit scroll-wheel zoom. Overridden (without calling `super`) because
@@ -64,18 +53,10 @@ public final class ModelSCNView: SCNView {
     }
 
     /// Applies a multiplicative zoom `factor` (< 1 zooms in, > 1 zooms out) to
-    /// the current camera. Perspective cameras zoom via `fieldOfView` (smaller
-    /// is more zoomed in); orthographic cameras zoom via `orthographicScale`,
-    /// clamped to +/-10x of their initial scale to keep the front view usable.
+    /// the perspective camera via `fieldOfView` (smaller is more zoomed in).
     private func zoom(factor: CGFloat) {
         guard factor > 0, let node = pointOfView, let cam = node.camera else { return }
-        if cam.usesOrthographicProjection {
-            let base = initialStates[node.name ?? ""]?.ortho ?? cam.orthographicScale
-            let proposed = cam.orthographicScale * Double(factor)
-            cam.orthographicScale = min(max(proposed, base * 0.1), base * 10)
-        } else {
-            cam.fieldOfView = min(max(cam.fieldOfView * factor, 3), 90)
-        }
+        cam.fieldOfView = min(max(cam.fieldOfView * factor, 3), 90)
     }
 }
 #endif

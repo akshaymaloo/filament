@@ -240,13 +240,11 @@ run("SceneKit scene construction") {
     check("SceneKit: makeScene() contains a geometry node", hasGeometryNode)
     check("SceneKit: makeScene() contains a camera node", sceneContainsCamera(scene.rootNode))
 
-    let camera3D = scene.previewCameraNode(for: .threeD)
-    let camera2D = scene.previewCameraNode(for: .twoD)
-    check("SceneKit: previewCameraNode(.threeD) non-nil", camera3D != nil)
-    check("SceneKit: previewCameraNode(.twoD) non-nil", camera2D != nil)
+    let camera3D = scene.previewCameraNode
+    check("SceneKit: previewCameraNode non-nil", camera3D != nil)
     check(
-        "SceneKit: previewCameraNode(.twoD) uses orthographic projection",
-        camera2D?.camera?.usesOrthographicProjection == true
+        "SceneKit: previewCameraNode uses perspective projection",
+        camera3D?.camera?.usesOrthographicProjection == false
     )
 
     // The default style is shadow-free: no ground plane should be added.

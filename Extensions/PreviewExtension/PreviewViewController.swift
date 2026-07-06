@@ -10,17 +10,15 @@ final class PreviewViewController: NSViewController, QLPreviewingController {
     private let overlayEffectView = NSVisualEffectView()
     private let overlayStack = NSStackView()
 
-    // Bottom chrome: 2D/3D toggle, color toggle, file name, plate selector.
+    // Bottom chrome: color toggle, file name, plate selector.
     private let bottomEffectView = NSVisualEffectView()
     private let bottomStack = NSStackView()
-    private let cameraModeControl = NSSegmentedControl()
     private let colorModeControl = NSSegmentedControl()
     private let fileNameLabel = NSTextField(labelWithString: "")
     private let plateControl = NSSegmentedControl()
 
     private var document: ThreeMFDocument?
     private var url: URL?
-    private var cameraMode: PreviewCameraMode = .threeD
     private var useModelColors = true
     private var currentPlateIndex = 0
 
@@ -95,16 +93,6 @@ final class PreviewViewController: NSViewController, QLPreviewingController {
         bottomEffectView.layer?.cornerRadius = 12
         bottomEffectView.layer?.masksToBounds = true
 
-        cameraModeControl.translatesAutoresizingMaskIntoConstraints = false
-        cameraModeControl.segmentStyle = .texturedRounded
-        cameraModeControl.segmentCount = 2
-        cameraModeControl.setLabel("2D", forSegment: 0)
-        cameraModeControl.setLabel("3D", forSegment: 1)
-        cameraModeControl.selectedSegment = 1
-        cameraModeControl.target = self
-        cameraModeControl.action = #selector(cameraModeChanged)
-        cameraModeControl.setContentHuggingPriority(.defaultHigh, for: .horizontal)
-
         colorModeControl.translatesAutoresizingMaskIntoConstraints = false
         colorModeControl.segmentStyle = .texturedRounded
         colorModeControl.segmentCount = 2
@@ -134,7 +122,6 @@ final class PreviewViewController: NSViewController, QLPreviewingController {
         bottomStack.alignment = .centerY
         bottomStack.spacing = 12
         bottomStack.translatesAutoresizingMaskIntoConstraints = false
-        bottomStack.addArrangedSubview(cameraModeControl)
         bottomStack.addArrangedSubview(colorModeControl)
         bottomStack.addArrangedSubview(fileNameLabel)
         bottomStack.addArrangedSubview(plateControl)
@@ -170,11 +157,6 @@ final class PreviewViewController: NSViewController, QLPreviewingController {
         displayPlate(at: plateControl.selectedSegment)
     }
 
-    @objc private func cameraModeChanged() {
-        cameraMode = cameraModeControl.selectedSegment == 0 ? .twoD : .threeD
-        scnView.apply(mode: cameraMode)
-    }
-
     @objc private func colorModeChanged() {
         useModelColors = colorModeControl.selectedSegment == 0
         displayPlate(at: currentPlateIndex)
@@ -204,7 +186,7 @@ final class PreviewViewController: NSViewController, QLPreviewingController {
         currentPlateIndex = index
         let plate = document.plates[index]
         colorModeControl.isHidden = !plate.hasColorData
-        scnView.display(scene: plate.makeScene(style: currentStyle()), mode: cameraMode)
+        scnView.display(scene: plate.makeScene(style: currentStyle()))
         updateOverlay(plate: plate, unit: document.unit)
     }
 
