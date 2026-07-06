@@ -249,19 +249,30 @@ run("SceneKit scene construction") {
         camera2D?.camera?.usesOrthographicProjection == true
     )
 
-    // Regression checks: the ground/shadow plane must not use SCNFloor (its
-    // reflection pass errors every frame and hangs previews of large meshes),
-    // and must be single-sided (a double-sided plane greys out the model when
-    // the camera orbits below it).
+    // The default style is shadow-free: no ground plane should be added.
+    var defaultHasPlane = false
+    forEachNode(scene.rootNode) { node in
+        if node.geometry is SCNPlane { defaultHasPlane = true }
+    }
+    check("SceneKit: default style has no ground plane (shadow-free)", !defaultHasPlane)
+
+    // Regression checks for the opt-in grounded style: the ground/shadow plane
+    // must not use SCNFloor (its reflection pass errors every frame and hangs
+    // previews of large meshes), and must be single-sided (a double-sided plane
+    // greys out the model when the camera orbits below it).
+    var groundedStyle = PreviewStyle.studio(useModelColors: false, isDark: false)
+    groundedStyle.showGroundPlane = true
+    groundedStyle.enableShadows = true
+    let groundedScene = plate.makeScene(style: groundedStyle)
     var usesSCNFloor = false
     var planeMaterial: SCNMaterial? = nil
-    forEachNode(scene.rootNode) { node in
+    forEachNode(groundedScene.rootNode) { node in
         guard let geometry = node.geometry else { return }
         if geometry is SCNFloor { usesSCNFloor = true }
         if geometry is SCNPlane, planeMaterial == nil { planeMaterial = geometry.firstMaterial }
     }
     check("SceneKit: does not use SCNFloor (avoids FloorPass hang)", !usesSCNFloor)
-    check("SceneKit: ground plane exists", planeMaterial != nil)
+    check("SceneKit: grounded style ground plane exists", planeMaterial != nil)
     check("SceneKit: ground plane is single-sided (no occlusion from below)", planeMaterial?.isDoubleSided == false)
 }
 #endif

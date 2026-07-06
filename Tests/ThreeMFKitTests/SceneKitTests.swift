@@ -37,7 +37,10 @@ final class SceneKitTests: XCTestCase {
     func testGroundPlaneIsNonOccludingPlane() throws {
         let doc = try ThreeMFLoader().load(data: ThreeMFFixtureFactory.minimalCube(deflate: false))
         let plate = try XCTUnwrap(doc.plates.first)
-        let scene = plate.makeScene()
+        var style = PreviewStyle.studio(useModelColors: false, isDark: false)
+        style.showGroundPlane = true
+        style.enableShadows = true
+        let scene = plate.makeScene(style: style)
 
         var floorGeometries: [SCNGeometry] = []
         var usesSCNFloor = false
@@ -53,6 +56,19 @@ final class SceneKitTests: XCTestCase {
         let floor = try XCTUnwrap(floorGeometries.first, "expected an SCNPlane ground/shadow catcher")
         let material = try XCTUnwrap(floor.firstMaterial)
         XCTAssertFalse(material.isDoubleSided, "ground plane must be single-sided so it doesn't occlude the model from below")
+    }
+
+    /// The default style is shadow-free, so no ground plane should be added.
+    func testDefaultStyleHasNoGroundPlane() throws {
+        let doc = try ThreeMFLoader().load(data: ThreeMFFixtureFactory.minimalCube(deflate: false))
+        let plate = try XCTUnwrap(doc.plates.first)
+        let scene = plate.makeScene()
+
+        var hasPlane = false
+        forEachNode(scene.rootNode) { node in
+            if node.geometry is SCNPlane { hasPlane = true }
+        }
+        XCTAssertFalse(hasPlane, "default (shadow-free) style should not add a ground plane")
     }
 
     private func forEachNode(_ node: SCNNode, _ body: (SCNNode) -> Void) {

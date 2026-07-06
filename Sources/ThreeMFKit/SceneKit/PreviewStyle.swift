@@ -49,14 +49,21 @@ public struct PreviewStyle {
     ///     palette) versus a single neutral material.
     ///   - isDark: use a dark backdrop/contact plane so the preview matches a
     ///     dark-mode host; otherwise the light near-white backdrop.
+    ///
+    /// The contact shadow and its ground plane are off by default: this is a
+    /// free-orbit viewer (a grounded shadow only reads correctly from above),
+    /// the per-frame shadow pass is costly on million-triangle meshes, and the
+    /// ground plane has historically been a source of preview bugs. Callers that
+    /// want a grounded studio render can still opt in via `showGroundPlane` /
+    /// `enableShadows`.
     public static func studio(useModelColors: Bool, isDark: Bool) -> PreviewStyle {
         PreviewStyle(
             modelColor: NSColor(calibratedWhite: 0.82, alpha: 1.0),
             backgroundColor: isDark
                 ? NSColor(calibratedWhite: 0.16, alpha: 1.0)
                 : NSColor(calibratedWhite: 0.93, alpha: 1.0),
-            showGroundPlane: true,
-            enableShadows: true,
+            showGroundPlane: false,
+            enableShadows: false,
             enableEnvironmentLighting: true,
             useModelColors: useModelColors
         )
