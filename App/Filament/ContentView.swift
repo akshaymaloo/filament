@@ -97,7 +97,8 @@ private struct LoadedDocumentView: View {
                     plate: selectedPlate,
                     cameraMode: cameraMode,
                     useModelColors: useModelColors,
-                    isDark: colorScheme == .dark
+                    isDark: colorScheme == .dark,
+                    documentToken: model.loadGeneration
                 )
                 .ignoresSafeArea()
                 InfoPanel(plate: selectedPlate, unit: document.unit)

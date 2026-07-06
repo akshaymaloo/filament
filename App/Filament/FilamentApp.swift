@@ -35,6 +35,26 @@ struct FilamentApp: App {
                 }
                 .keyboardShortcut("o", modifiers: .command)
             }
+            CommandGroup(after: .newItem) {
+                Divider()
+                Button("Reload") {
+                    model.reload()
+                }
+                .keyboardShortcut("r", modifiers: .command)
+                .disabled(model.fileURL == nil)
+
+                Button("Reveal in Finder") {
+                    revealInFinder()
+                }
+                .keyboardShortcut("r", modifiers: [.command, .shift])
+                .disabled(model.fileURL == nil)
+
+                Button("Close File") {
+                    model.reset()
+                }
+                .keyboardShortcut("w", modifiers: .command)
+                .disabled(model.document == nil && model.errorMessage == nil)
+            }
         }
     }
 
@@ -49,5 +69,11 @@ struct FilamentApp: App {
             guard response == .OK, let url = panel.url else { return }
             model.load(url: url)
         }
+    }
+
+    /// Reveals the currently open file in Finder.
+    private func revealInFinder() {
+        guard let url = model.fileURL else { return }
+        NSWorkspace.shared.activateFileViewerSelecting([url])
     }
 }

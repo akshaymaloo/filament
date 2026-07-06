@@ -10,6 +10,10 @@ final class DocumentModel: ObservableObject {
     @Published private(set) var isLoading = false
     @Published var errorMessage: String?
     @Published private(set) var fileURL: URL?
+    /// Increments on every successful load. Used as a stable identity so the
+    /// SceneKit view rebuilds even when two different documents share the same
+    /// plate id (implicit single plates are always id 1).
+    @Published private(set) var loadGeneration = 0
 
     /// Loads a 3MF/STL/OBJ/PLY file asynchronously and publishes the result.
     func load(url: URL) {
@@ -24,12 +28,19 @@ final class DocumentModel: ObservableObject {
                 self.document = doc
                 self.selectedPlateIndex = 0
                 self.fileURL = url
+                self.loadGeneration += 1
                 self.isLoading = false
             } catch {
                 self.errorMessage = Self.describe(error)
                 self.isLoading = false
             }
         }
+    }
+
+    /// Reloads the currently open file from disk, if any.
+    func reload() {
+        guard let url = fileURL else { return }
+        load(url: url)
     }
 
     func reset() {
