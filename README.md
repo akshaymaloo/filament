@@ -44,7 +44,11 @@ Filament adds **thumbnails** and **interactive Quick Look previews** for:
 - **Model info.** Dimensions (W × D × H mm) and triangle count; print time,
   weight, and printer for 3MF.
 - **Open in the app.** Double-click a supported file (or drag-and-drop) to open
-  it in the Filament window.
+  it in the Filament window. Drag another file in to swap the model instantly.
+- **Fast on big models.** A dedicated streaming 3MF parser opens multi-million-
+  triangle files in about a second.
+- **Keyboard shortcuts.** Open (⌘O), Reload (⌘R), Reveal in Finder (⇧⌘R), and
+  Close File (⌘W).
 - **Default opener.** `install.sh` makes Filament the default app for `.3mf`
   and `.stl` (overriding Preview for STL); opt out with `--no-defaults`.
 - **Privacy-friendly & offline.** Everything runs locally — no network, no
