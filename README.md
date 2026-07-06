@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="App/Filament/Assets.xcassets/AppIcon.appiconset/icon_256.png" width="128" alt="Filament app icon">
+  <img src="docs/icon.png" width="128" alt="Filament app icon">
 </p>
 
 <h1 align="center">Filament</h1>
