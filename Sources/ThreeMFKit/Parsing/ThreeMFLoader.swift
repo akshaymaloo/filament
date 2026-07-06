@@ -45,6 +45,15 @@ public struct ThreeMFLoader {
 
         let model = try ModelXMLParser.parse(data: modelData, parseMesh: options.parseMesh)
 
+        var plateAssignments: [BambuPlateAssignment] = []
+        var objectExtruder: [Int: Int] = [:]
+        if options.parsePlates, let settingsData = try zip.dataCaseInsensitive(for: "Metadata/model_settings.config") {
+            if let parsed = try? BambuModelSettingsParser.parse(data: settingsData) {
+                plateAssignments = parsed.plates
+                objectExtruder = parsed.objectExtruder
+            }
+        }
+
         // Production Extension packages keep object geometry in separate
         // model parts, referenced from `<component p:path="...">`. Lazily
         // parse and cache those external parts as the resolver requests them.
@@ -57,14 +66,9 @@ public struct ThreeMFLoader {
             partCache[partPath] = parsed.objects
             return parsed.objects
         }
-        let resolvedItems = try MeshResolver.resolveBuildItems(buildItems: model.buildItems, provider: provider)
+        let resolvedItems = try MeshResolver.resolveBuildItems(buildItems: model.buildItems, provider: provider, objectExtruder: objectExtruder)
 
         let packageThumbnail = try loadPackageThumbnail(zip: zip)
-
-        var plateAssignments: [BambuPlateAssignment] = []
-        if options.parsePlates, let settingsData = try zip.dataCaseInsensitive(for: "Metadata/model_settings.config") {
-            plateAssignments = (try? BambuModelSettingsParser.parse(data: settingsData)) ?? []
-        }
 
         var projectColors: [String]? = nil
         var projectTypes: [String]? = nil
@@ -73,6 +77,7 @@ public struct ThreeMFLoader {
             projectColors = parsed.colors
             projectTypes = parsed.types
         }
+        let palette = projectColors ?? []
 
         let plates: [BuildPlate]
         if !plateAssignments.isEmpty {
@@ -81,10 +86,11 @@ public struct ThreeMFLoader {
                 resolvedItems: resolvedItems,
                 zip: zip,
                 projectColors: projectColors,
-                projectTypes: projectTypes
+                projectTypes: projectTypes,
+                palette: palette
             )
         } else {
-            plates = [try buildImplicitPlate(resolvedItems: resolvedItems, zip: zip, packageThumbnail: packageThumbnail)]
+            plates = [try buildImplicitPlate(resolvedItems: resolvedItems, zip: zip, packageThumbnail: packageThumbnail, palette: palette)]
         }
 
         return ThreeMFDocument(unit: model.unit, plates: plates.sorted { $0.id < $1.id }, packageThumbnail: packageThumbnail)
@@ -143,17 +149,18 @@ public struct ThreeMFLoader {
         return try zip.dataCaseInsensitive(for: "Metadata/thumbnail.png", sizeLimit: options.maxThumbnailBytes)
     }
 
-    private func buildImplicitPlate(resolvedItems: [(objectId: Int, mesh: TriangleMesh)], zip: ZipArchive, packageThumbnail: Data?) throws -> BuildPlate {
+    private func buildImplicitPlate(resolvedItems: [(objectId: Int, mesh: TriangleMesh)], zip: ZipArchive, packageThumbnail: Data?, palette: [String]) throws -> BuildPlate {
         var mesh = TriangleMesh()
         for item in resolvedItems {
             mesh.append(item.mesh)
         }
+        mesh = Self.finalizeMesh(mesh, hasPalette: !palette.isEmpty)
         let thumbnail = try zip.dataCaseInsensitive(for: "Metadata/plate_1.png", sizeLimit: options.maxThumbnailBytes) ?? packageThumbnail
         var stats: PlateStats? = nil
         if let statsData = try zip.dataCaseInsensitive(for: "Metadata/plate_1.json") {
             stats = BambuPlateStatsParser.parseStats(json: statsData, colors: nil, types: nil)
         }
-        return BuildPlate(id: 1, name: "Plate 1", thumbnail: thumbnail, mesh: mesh, stats: stats)
+        return BuildPlate(id: 1, name: "Plate 1", thumbnail: thumbnail, mesh: mesh, stats: stats, palette: palette)
     }
 
     private func buildBambuPlates(
@@ -161,7 +168,8 @@ public struct ThreeMFLoader {
         resolvedItems: [(objectId: Int, mesh: TriangleMesh)],
         zip: ZipArchive,
         projectColors: [String]?,
-        projectTypes: [String]?
+        projectTypes: [String]?,
+        palette: [String]
     ) throws -> [BuildPlate] {
         var meshByObjectId: [Int: TriangleMesh] = [:]
         for item in resolvedItems {
@@ -181,6 +189,7 @@ public struct ThreeMFLoader {
                     mesh.append(objMesh)
                 }
             }
+            mesh = Self.finalizeMesh(mesh, hasPalette: !palette.isEmpty)
 
             let thumbnail = try zip.dataCaseInsensitive(for: "Metadata/plate_\(assignment.id).png", sizeLimit: options.maxThumbnailBytes)
 
@@ -189,8 +198,23 @@ public struct ThreeMFLoader {
                 stats = BambuPlateStatsParser.parseStats(json: statsData, colors: projectColors, types: projectTypes)
             }
 
-            plates.append(BuildPlate(id: assignment.id, name: assignment.name, thumbnail: thumbnail, mesh: mesh, stats: stats))
+            plates.append(BuildPlate(id: assignment.id, name: assignment.name, thumbnail: thumbnail, mesh: mesh, stats: stats, palette: palette))
         }
         return plates
+    }
+
+    /// Clears `triangleColorIndices` back to `nil` (uncolored) when there is no
+    /// real color information: no filament palette *and* every triangle's
+    /// resolved index is the default `0` (i.e. no `paint_color` overrides and
+    /// no non-default base extruder were involved). This keeps plain/non-Bambu
+    /// packages rendering as a single neutral material, unchanged from before.
+    private static func finalizeMesh(_ mesh: TriangleMesh, hasPalette: Bool) -> TriangleMesh {
+        guard let colorIndices = mesh.triangleColorIndices else { return mesh }
+        guard hasPalette || !colorIndices.allSatisfy({ $0 == 0 }) else {
+            var uncolored = mesh
+            uncolored.triangleColorIndices = nil
+            return uncolored
+        }
+        return mesh
     }
 }

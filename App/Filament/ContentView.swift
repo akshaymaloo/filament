@@ -80,7 +80,9 @@ private struct DropZoneView: View {
 private struct LoadedDocumentView: View {
     let document: ThreeMFDocument
     @EnvironmentObject private var model: DocumentModel
+    @Environment(\.colorScheme) private var colorScheme
     @State private var cameraMode: PreviewCameraMode = .threeD
+    @State private var useModelColors = true
 
     private var selectedPlate: BuildPlate {
         let plates = document.plates
@@ -91,13 +93,23 @@ private struct LoadedDocumentView: View {
     var body: some View {
         VStack(spacing: 0) {
             ZStack(alignment: .topTrailing) {
-                SceneKitView(plate: selectedPlate, cameraMode: cameraMode)
-                    .ignoresSafeArea()
+                SceneKitView(
+                    plate: selectedPlate,
+                    cameraMode: cameraMode,
+                    useModelColors: useModelColors,
+                    isDark: colorScheme == .dark
+                )
+                .ignoresSafeArea()
                 InfoPanel(plate: selectedPlate, unit: document.unit)
                     .padding(16)
-                CameraModePicker(cameraMode: $cameraMode)
-                    .padding(16)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                HStack(spacing: 10) {
+                    CameraModePicker(cameraMode: $cameraMode)
+                    if selectedPlate.hasColorData {
+                        ColorModePicker(useModelColors: $useModelColors)
+                    }
+                }
+                .padding(16)
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
 
@@ -119,6 +131,25 @@ private struct CameraModePicker: View {
         .labelsHidden()
         .pickerStyle(.segmented)
         .frame(width: 100)
+        .padding(6)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .shadow(color: .black.opacity(0.1), radius: 6, y: 2)
+    }
+}
+
+/// Segmented control for switching between real filament colors and a neutral
+/// monochrome studio look. Shown only for plates with multi-color data.
+private struct ColorModePicker: View {
+    @Binding var useModelColors: Bool
+
+    var body: some View {
+        Picker("Colors", selection: $useModelColors) {
+            Text("Color").tag(true)
+            Text("Mono").tag(false)
+        }
+        .labelsHidden()
+        .pickerStyle(.segmented)
+        .frame(width: 120)
         .padding(6)
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
         .shadow(color: .black.opacity(0.1), radius: 6, y: 2)

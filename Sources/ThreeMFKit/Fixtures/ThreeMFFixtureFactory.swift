@@ -191,6 +191,77 @@ public enum ThreeMFFixtureFactory {
         ])
     }
 
+    /// A single-object cube with a Bambu-style paint override: the first
+    /// triangle carries `paint_color="8"` (decodes to extruder 2 / green, see
+    /// `PaintColorDecoder`), while every other triangle is unpainted and thus
+    /// falls back to the object's base extruder (1 / red, from
+    /// `model_settings.config`). `project_settings.config` supplies the
+    /// two-color filament palette.
+    public static func bambuPaintedTriangles() -> Data {
+        // `paint_color="8"` is the shortest hex bitstream that decodes to
+        // extruder 2: reading its single nibble LSB-first gives bits
+        // [0,0,0,1]; the first two bits are `nss=0` (leaf triangle) and the
+        // next two are `sc=2` (`sc < 3`, so `state = sc = 2`), i.e. "painted
+        // with extruder 2". See `PaintColorDecoder.decode`.
+        let paintColorForExtruder2 = "8"
+
+        var s = "<object id=\"1\" type=\"model\">\n  <mesh>\n    <vertices>\n"
+        for v in cubeVertices {
+            s += "      <vertex x=\"\(v.0)\" y=\"\(v.1)\" z=\"\(v.2)\"/>\n"
+        }
+        s += "    </vertices>\n    <triangles>\n"
+        for (index, t) in cubeTriangles.enumerated() {
+            if index == 0 {
+                s += "      <triangle v1=\"\(t.0)\" v2=\"\(t.1)\" v3=\"\(t.2)\" paint_color=\"\(paintColorForExtruder2)\"/>\n"
+            } else {
+                s += "      <triangle v1=\"\(t.0)\" v2=\"\(t.1)\" v3=\"\(t.2)\"/>\n"
+            }
+        }
+        s += "    </triangles>\n  </mesh>\n</object>\n"
+        let objectXML = s
+
+        let modelXML = """
+        <?xml version="1.0" encoding="UTF-8"?>
+        <model unit="millimeter" xmlns="http://schemas.microsoft.com/3dmanufacturing/core/2015/02">
+          <resources>
+        \(objectXML)
+          </resources>
+          <build>
+            <item objectid="1"/>
+          </build>
+        </model>
+        """
+
+        let modelSettingsXML = """
+        <?xml version="1.0" encoding="UTF-8"?>
+        <config>
+          <object id="1">
+            <metadata key="name" value="painted_cube.stl"/>
+            <metadata key="extruder" value="1"/>
+          </object>
+          <plate>
+            <metadata key="plater_id" value="1"/>
+            <metadata key="plater_name" value="Painted Cube"/>
+            <model_instance>
+              <metadata key="object_id" value="1"/>
+            </model_instance>
+          </plate>
+        </config>
+        """
+
+        let projectSettingsJSON = """
+        {"filament_colour": ["#FF0000", "#00FF00"]}
+        """
+
+        return archive(deflate: true, entries: [
+            ("[Content_Types].xml", Data(contentTypesXML.utf8)),
+            ("_rels/.rels", Data(relsXML(includeThumbnail: false).utf8)),
+            ("3D/3dmodel.model", Data(modelXML.utf8)),
+            ("Metadata/model_settings.config", Data(modelSettingsXML.utf8)),
+            ("Metadata/project_settings.config", Data(projectSettingsJSON.utf8))
+        ])
+    }
+
     private static func archive(deflate: Bool, entries: [(String, Data)]) -> Data {
         var writer = ZipWriter()
         for (path, data) in entries {

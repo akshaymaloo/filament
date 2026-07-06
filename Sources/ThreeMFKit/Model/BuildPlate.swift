@@ -40,12 +40,29 @@ public struct BuildPlate: Identifiable {
     public let thumbnail: Data?
     public let mesh: TriangleMesh
     public let stats: PlateStats?
+    /// Filament colors as `"#RRGGBB"`/`"#RRGGBBAA"` hex strings, from the
+    /// slicer's `filament_colour` project setting. Index `i` is the color for
+    /// palette index `i` in `mesh.triangleColorIndices` (extruder `i + 1`).
+    /// Empty when the source package has no known filament palette.
+    public let palette: [String]
 
-    public init(id: Int, name: String, thumbnail: Data?, mesh: TriangleMesh, stats: PlateStats?) {
+    public init(id: Int, name: String, thumbnail: Data?, mesh: TriangleMesh, stats: PlateStats?, palette: [String] = []) {
         self.id = id
         self.name = name
         self.thumbnail = thumbnail
         self.mesh = mesh
         self.stats = stats
+        self.palette = palette
+    }
+
+    /// Whether this plate carries renderable multi-color data: a palette of at
+    /// least two filaments plus per-triangle color assignments that span more
+    /// than one color. Hosts use this to decide whether to offer a
+    /// color/monochrome toggle (there's nothing to toggle for a single color).
+    public var hasColorData: Bool {
+        guard palette.count >= 2, let indices = mesh.triangleColorIndices, let first = indices.first else {
+            return false
+        }
+        return indices.contains { $0 != first }
     }
 }

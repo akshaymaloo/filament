@@ -8,9 +8,18 @@ struct BambuPlateAssignment {
     let objectIds: [Int]
 }
 
+/// Result of parsing `Metadata/model_settings.config`.
+struct BambuModelSettings {
+    let plates: [BambuPlateAssignment]
+    /// Maps object id -> 1-based base extruder, from top-level
+    /// `<object id="N"><metadata key="extruder" value="E"/></object>` blocks.
+    /// Objects absent from this map default to extruder 1.
+    let objectExtruder: [Int: Int]
+}
+
 /// Parses Bambu/Orca `Metadata/model_settings.config` (an XML `<config>` document).
 enum BambuModelSettingsParser {
-    static func parse(data: Data) throws -> [BambuPlateAssignment] {
+    static func parse(data: Data) throws -> BambuModelSettings {
         let delegate = ModelSettingsXMLParser()
         let parser = XMLParser(data: data)
         parser.delegate = delegate
@@ -19,18 +28,24 @@ enum BambuModelSettingsParser {
             let message = parser.parserError.map { "\($0)" } ?? "unknown XML parse failure"
             throw ThreeMFError.malformedXML(message)
         }
-        return delegate.plates
+        return BambuModelSettings(plates: delegate.plates, objectExtruder: delegate.objectExtruder)
     }
 }
 
 private final class ModelSettingsXMLParser: NSObject, XMLParserDelegate {
     var plates: [BambuPlateAssignment] = []
+    var objectExtruder: [Int: Int] = [:]
 
     private var inPlate = false
     private var inModelInstance = false
     private var platerId: Int?
     private var platerName: String = ""
     private var objectIds: [Int] = []
+
+    // Top-level `<object id="N">` blocks (siblings of `<plate>`) carry
+    // per-object metadata such as the base extruder.
+    private var inObject = false
+    private var currentObjectId: Int?
 
     func parser(_ parser: XMLParser, didStartElement elementName: String, namespaceURI: String?, qualifiedName qName: String?, attributes attributeDict: [String: String] = [:]) {
         switch elementName {
@@ -39,20 +54,30 @@ private final class ModelSettingsXMLParser: NSObject, XMLParserDelegate {
             platerId = nil
             platerName = ""
             objectIds = []
+        case "object":
+            guard let idString = attributeDict["id"], let id = Int(idString) else { return }
+            inObject = true
+            currentObjectId = id
         case "model_instance":
             inModelInstance = true
         case "metadata":
-            guard inPlate, let key = attributeDict["key"] else { return }
+            guard let key = attributeDict["key"] else { return }
             let value = attributeDict["value"] ?? ""
-            if inModelInstance {
-                if key == "object_id", let id = Int(value) {
-                    objectIds.append(id)
+            if inPlate {
+                if inModelInstance {
+                    if key == "object_id", let id = Int(value) {
+                        objectIds.append(id)
+                    }
+                } else {
+                    if key == "plater_id", let id = Int(value) {
+                        platerId = id
+                    } else if key == "plater_name" {
+                        platerName = value
+                    }
                 }
-            } else {
-                if key == "plater_id", let id = Int(value) {
-                    platerId = id
-                } else if key == "plater_name" {
-                    platerName = value
+            } else if inObject, let objectId = currentObjectId {
+                if key == "extruder", let extruder = Int(value) {
+                    objectExtruder[objectId] = extruder
                 }
             }
         default:
@@ -70,6 +95,9 @@ private final class ModelSettingsXMLParser: NSObject, XMLParserDelegate {
                 plates.append(BambuPlateAssignment(id: id, name: name, objectIds: objectIds))
             }
             inPlate = false
+        case "object":
+            inObject = false
+            currentObjectId = nil
         default:
             break
         }

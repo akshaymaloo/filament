@@ -10,20 +10,24 @@ final class PreviewViewController: NSViewController, QLPreviewingController {
     private let overlayEffectView = NSVisualEffectView()
     private let overlayStack = NSStackView()
 
-    // Bottom chrome: 2D/3D toggle, file name, plate selector — all in one bar.
+    // Bottom chrome: 2D/3D toggle, color toggle, file name, plate selector.
     private let bottomEffectView = NSVisualEffectView()
     private let bottomStack = NSStackView()
     private let cameraModeControl = NSSegmentedControl()
+    private let colorModeControl = NSSegmentedControl()
     private let fileNameLabel = NSTextField(labelWithString: "")
     private let plateControl = NSSegmentedControl()
 
     private var document: ThreeMFDocument?
     private var url: URL?
     private var cameraMode: PreviewCameraMode = .threeD
+    private var useModelColors = true
+    private var currentPlateIndex = 0
 
     override func loadView() {
-        let container = NSView()
+        let container = AppearanceObservingView()
         container.wantsLayer = true
+        container.onAppearanceChange = { [weak self] in self?.appearanceChanged() }
 
         scnView.translatesAutoresizingMaskIntoConstraints = false
         let doubleClick = NSClickGestureRecognizer(target: self, action: #selector(resetCamera))
@@ -101,6 +105,17 @@ final class PreviewViewController: NSViewController, QLPreviewingController {
         cameraModeControl.action = #selector(cameraModeChanged)
         cameraModeControl.setContentHuggingPriority(.defaultHigh, for: .horizontal)
 
+        colorModeControl.translatesAutoresizingMaskIntoConstraints = false
+        colorModeControl.segmentStyle = .texturedRounded
+        colorModeControl.segmentCount = 2
+        colorModeControl.setLabel("Color", forSegment: 0)
+        colorModeControl.setLabel("Mono", forSegment: 1)
+        colorModeControl.selectedSegment = 0
+        colorModeControl.target = self
+        colorModeControl.action = #selector(colorModeChanged)
+        colorModeControl.isHidden = true
+        colorModeControl.setContentHuggingPriority(.defaultHigh, for: .horizontal)
+
         fileNameLabel.font = .systemFont(ofSize: 11, weight: .regular)
         fileNameLabel.textColor = .secondaryLabelColor
         fileNameLabel.alignment = .center
@@ -120,6 +135,7 @@ final class PreviewViewController: NSViewController, QLPreviewingController {
         bottomStack.spacing = 12
         bottomStack.translatesAutoresizingMaskIntoConstraints = false
         bottomStack.addArrangedSubview(cameraModeControl)
+        bottomStack.addArrangedSubview(colorModeControl)
         bottomStack.addArrangedSubview(fileNameLabel)
         bottomStack.addArrangedSubview(plateControl)
         bottomEffectView.addSubview(bottomStack)
@@ -159,16 +175,36 @@ final class PreviewViewController: NSViewController, QLPreviewingController {
         scnView.apply(mode: cameraMode)
     }
 
+    @objc private func colorModeChanged() {
+        useModelColors = colorModeControl.selectedSegment == 0
+        displayPlate(at: currentPlateIndex)
+    }
+
     /// Resets the current camera to its initial framing, discarding any
     /// orbit/pan/zoom applied by the user.
     @objc private func resetCamera() {
         scnView.resetView()
     }
 
+    /// Rebuilds the current plate when the host switches between light and dark
+    /// appearance so the backdrop matches.
+    private func appearanceChanged() {
+        guard document != nil else { return }
+        displayPlate(at: currentPlateIndex)
+    }
+
+    /// The studio style resolved for the current appearance and color mode.
+    private func currentStyle() -> PreviewStyle {
+        let isDark = view.effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+        return .studio(useModelColors: useModelColors, isDark: isDark)
+    }
+
     private func displayPlate(at index: Int) {
         guard let document, document.plates.indices.contains(index) else { return }
+        currentPlateIndex = index
         let plate = document.plates[index]
-        scnView.display(scene: plate.makeScene(), mode: cameraMode)
+        colorModeControl.isHidden = !plate.hasColorData
+        scnView.display(scene: plate.makeScene(style: currentStyle()), mode: cameraMode)
         updateOverlay(plate: plate, unit: document.unit)
     }
 
@@ -242,4 +278,16 @@ private extension Formatter {
         formatter.usesGroupingSeparator = true
         return formatter
     }()
+}
+
+/// A container `NSView` that invokes a callback whenever its effective
+/// appearance changes (light ⇄ dark), so the controller can rebuild the scene
+/// with a matching backdrop.
+private final class AppearanceObservingView: NSView {
+    var onAppearanceChange: (() -> Void)?
+
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        onAppearanceChange?()
+    }
 }

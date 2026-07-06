@@ -30,6 +30,7 @@ enum MeshResolver {
         partPath: String?,
         objectId: Int,
         accumulated: Matrix4,
+        objectExtruder: [Int: Int],
         visiting: inout Set<String>
     ) throws -> TriangleMesh {
         // The cycle-guard key must include the part, since the same object id
@@ -48,10 +49,19 @@ enum MeshResolver {
         defer { visiting.remove(key) }
 
         switch definition {
-        case .mesh(let mesh):
+        case .mesh(let mesh, let paintStates):
             guard !mesh.isEmpty else { return TriangleMesh() }
             let transformed = mesh.positions.map { accumulated.apply(to: $0) }
-            return TriangleMesh(positions: transformed, indices: mesh.indices)
+            // Per-triangle palette index: a painted triangle (paintState >= 1)
+            // uses its own decoded extruder; otherwise it falls back to this
+            // object's base extruder (default 1, i.e. palette index 0).
+            let baseExtruder = objectExtruder[objectId] ?? 1
+            let colorIndices: [UInt8] = (0..<mesh.triangleCount).map { i in
+                let paintState = i < paintStates.count ? paintStates[i] : 0
+                let extruder = paintState >= 1 ? paintState : baseExtruder
+                return UInt8(max(0, min(extruder - 1, 254)))
+            }
+            return TriangleMesh(positions: transformed, indices: mesh.indices, triangleColorIndices: colorIndices)
         case .components(let components):
             var combined = TriangleMesh()
             for component in components {
@@ -64,6 +74,7 @@ enum MeshResolver {
                     partPath: childPath,
                     objectId: component.objectId,
                     accumulated: childTransform,
+                    objectExtruder: objectExtruder,
                     visiting: &visiting
                 )
                 combined.append(childMesh)
@@ -75,12 +86,25 @@ enum MeshResolver {
     /// Resolves every top-level build item, returning `(rootObjectId, mesh)` pairs
     /// in build-item order. `rootObjectId` is the item's own `objectid`, which is
     /// what Bambu plate metadata (`model_instance/@object_id`) refers to. Build
-    /// items always start resolution in the root model part.
-    static func resolveBuildItems(buildItems: [BuildItem], provider: PartProvider) throws -> [(objectId: Int, mesh: TriangleMesh)] {
+    /// items always start resolution in the root model part. `objectExtruder`
+    /// maps object id -> 1-based base extruder, from `model_settings.config`
+    /// (default 1 when an object is absent from the map).
+    static func resolveBuildItems(
+        buildItems: [BuildItem],
+        provider: PartProvider,
+        objectExtruder: [Int: Int] = [:]
+    ) throws -> [(objectId: Int, mesh: TriangleMesh)] {
         var results: [(objectId: Int, mesh: TriangleMesh)] = []
         for item in buildItems {
             var visiting = Set<String>()
-            let mesh = try resolveMesh(provider: provider, partPath: nil, objectId: item.objectId, accumulated: item.transform, visiting: &visiting)
+            let mesh = try resolveMesh(
+                provider: provider,
+                partPath: nil,
+                objectId: item.objectId,
+                accumulated: item.transform,
+                objectExtruder: objectExtruder,
+                visiting: &visiting
+            )
             results.append((objectId: item.objectId, mesh: mesh))
         }
         return results

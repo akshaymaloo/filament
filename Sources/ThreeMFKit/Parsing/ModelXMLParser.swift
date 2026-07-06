@@ -3,7 +3,11 @@ import simd
 
 /// Parsed representation of a single `<object>` resource before build-time resolution.
 enum ObjectDefinition {
-    case mesh(TriangleMesh)
+    /// `paintStates` is parallel to the mesh's triangles: the decoded
+    /// `paint_color` extruder index (1-based) for each triangle, or `0` when
+    /// the triangle has no `paint_color` attribute (i.e. use the object's
+    /// base extruder from `model_settings.config`).
+    case mesh(TriangleMesh, paintStates: [Int])
     /// `path`, when non-nil, is the raw (un-normalized) Production Extension
     /// `p:path` value pointing at an external model part that owns the
     /// referenced object; `nil` means the component lives in the same part.
@@ -29,6 +33,7 @@ final class ModelXMLParser: NSObject, XMLParserDelegate {
     private var currentObjectId: Int?
     private var currentVertices: [SIMD3<Float>] = []
     private var currentIndices: [UInt32] = []
+    private var currentPaintStates: [Int] = []
     private var currentComponents: [(objectId: Int, transform: Matrix4, path: String?)] = []
     private var inMesh = false
     private var inVertices = false
@@ -70,6 +75,7 @@ final class ModelXMLParser: NSObject, XMLParserDelegate {
             currentObjectId = id
             currentVertices = []
             currentIndices = []
+            currentPaintStates = []
             currentComponents = []
         case "mesh":
             inMesh = true
@@ -89,6 +95,8 @@ final class ModelXMLParser: NSObject, XMLParserDelegate {
                   let v2 = UInt32(attributeDict["v2"] ?? ""),
                   let v3 = UInt32(attributeDict["v3"] ?? "") else { return }
             currentIndices.append(contentsOf: [v1, v2, v3])
+            let paintState = attributeDict["paint_color"].map { PaintColorDecoder.decode($0) } ?? 0
+            currentPaintStates.append(paintState)
         case "components":
             inComponents = true
         case "component":
@@ -125,7 +133,7 @@ final class ModelXMLParser: NSObject, XMLParserDelegate {
             if !currentComponents.isEmpty {
                 objects[id] = .components(currentComponents)
             } else {
-                objects[id] = .mesh(TriangleMesh(positions: currentVertices, indices: currentIndices))
+                objects[id] = .mesh(TriangleMesh(positions: currentVertices, indices: currentIndices), paintStates: currentPaintStates)
             }
             currentObjectId = nil
         default:

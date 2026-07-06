@@ -156,6 +156,58 @@ run("bambuTwoPlates load") {
     check("bambuTwoPlates: extractPrimaryThumbnail is PNG", quickThumb.map(isPNG) ?? false)
 }
 
+// MARK: - bambuPaintedTriangles (multi-color paint_color + filament palette)
+
+run("bambuPaintedTriangles load") {
+    let data = ThreeMFFixtureFactory.bambuPaintedTriangles()
+    let loader = ThreeMFLoader()
+    let doc = try loader.load(data: data)
+
+    check("bambuPaintedTriangles: 1 plate", doc.plates.count == 1)
+    guard let plate = doc.plates.first else { return }
+
+    check("bambuPaintedTriangles: palette == [#FF0000, #00FF00]", plate.palette == ["#FF0000", "#00FF00"])
+    check("bambuPaintedTriangles: mesh triangleCount == 12", plate.mesh.triangleCount == 12)
+
+    guard let colorIndices = plate.mesh.triangleColorIndices else {
+        check("bambuPaintedTriangles: triangleColorIndices non-nil", false)
+        return
+    }
+    check("bambuPaintedTriangles: triangleColorIndices non-nil", true)
+    check("bambuPaintedTriangles: triangleColorIndices count == triangleCount", colorIndices.count == plate.mesh.triangleCount)
+    check("bambuPaintedTriangles: at least one triangle at palette index 1 (green, painted)", colorIndices.contains(1))
+    check("bambuPaintedTriangles: at least one triangle at palette index 0 (red, base extruder)", colorIndices.contains(0))
+}
+
+run("PaintColorDecoder known values") {
+    check("PaintColorDecoder.decode(\"8\") == 2", PaintColorDecoder.decode("8") == 2)
+    check("PaintColorDecoder.decode(\"\") == 0", PaintColorDecoder.decode("") == 0)
+}
+
+#if canImport(SceneKit)
+run("SceneKit multi-color scene construction") {
+    let data = ThreeMFFixtureFactory.bambuPaintedTriangles()
+    let loader = ThreeMFLoader()
+    let doc = try loader.load(data: data)
+    guard let plate = doc.plates.first else {
+        check("SceneKit colored: plate available", false)
+        return
+    }
+
+    let scene = plate.makeScene()
+    var diffuseColors: Set<NSColor> = []
+    forEachNode(scene.rootNode) { node in
+        guard let geometry = node.geometry else { return }
+        for material in geometry.materials {
+            if let color = material.diffuse.contents as? NSColor {
+                diffuseColors.insert(color)
+            }
+        }
+    }
+    check("SceneKit colored: scene has >= 2 distinct diffuse materials", diffuseColors.count >= 2)
+}
+#endif
+
 // MARK: - Thumbnail-only fast path (parseMesh = false)
 
 run("thumbnailOnly options fast path") {

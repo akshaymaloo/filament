@@ -6,14 +6,20 @@ import ThreeMFKit
 struct SceneKitView: NSViewRepresentable {
     let plate: BuildPlate
     var cameraMode: PreviewCameraMode = .threeD
+    var useModelColors: Bool = true
+    var isDark: Bool = false
 
     func makeCoordinator() -> Coordinator {
-        Coordinator(plateID: plate.id, cameraMode: cameraMode)
+        Coordinator(plateID: plate.id, cameraMode: cameraMode, useModelColors: useModelColors, isDark: isDark)
+    }
+
+    private var style: PreviewStyle {
+        .studio(useModelColors: useModelColors, isDark: isDark)
     }
 
     func makeNSView(context: Context) -> SCNView {
         let view = ModelSCNView()
-        view.display(scene: plate.makeScene(), mode: cameraMode)
+        view.display(scene: plate.makeScene(style: style), mode: cameraMode)
 
         let doubleClick = NSClickGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.resetCamera))
         doubleClick.numberOfClicksRequired = 2
@@ -24,17 +30,21 @@ struct SceneKitView: NSViewRepresentable {
     }
 
     func updateNSView(_ nsView: SCNView, context: Context) {
-        // Only rebuild the scene when the selected plate actually changes;
+        // Only rebuild the scene when an input that affects it actually changes;
         // SwiftUI may call updateNSView for unrelated state updates.
         let plateChanged = context.coordinator.plateID != plate.id
         let modeChanged = context.coordinator.cameraMode != cameraMode
-        guard plateChanged || modeChanged else { return }
+        let styleChanged = context.coordinator.useModelColors != useModelColors
+            || context.coordinator.isDark != isDark
+        guard plateChanged || modeChanged || styleChanged else { return }
 
         guard let view = nsView as? ModelSCNView else { return }
 
-        if plateChanged {
+        if plateChanged || styleChanged {
             context.coordinator.plateID = plate.id
-            view.display(scene: plate.makeScene(), mode: cameraMode)
+            context.coordinator.useModelColors = useModelColors
+            context.coordinator.isDark = isDark
+            view.display(scene: plate.makeScene(style: style), mode: cameraMode)
         } else if modeChanged {
             // Switching between the perspective ("3D") and orthographic front
             // ("2D") cameras also switches the appropriate camera-control
@@ -48,11 +58,15 @@ struct SceneKitView: NSViewRepresentable {
     final class Coordinator {
         var plateID: Int
         var cameraMode: PreviewCameraMode
+        var useModelColors: Bool
+        var isDark: Bool
         weak var scnView: ModelSCNView?
 
-        init(plateID: Int, cameraMode: PreviewCameraMode) {
+        init(plateID: Int, cameraMode: PreviewCameraMode, useModelColors: Bool, isDark: Bool) {
             self.plateID = plateID
             self.cameraMode = cameraMode
+            self.useModelColors = useModelColors
+            self.isDark = isDark
         }
 
         /// Discards any orbit/pan/zoom the user applied by restoring the
