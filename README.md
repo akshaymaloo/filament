@@ -18,6 +18,11 @@
 ---
 
 <p align="center">
+  <img src="docs/color-preview.gif" width="60%" alt="Interactive full-color 3MF preview spinning in Filament">
+</p>
+<p align="center"><sub>Multi-material 3MF models render in their real filament colors, with an interactive turntable preview.</sub></p>
+
+<p align="center">
   <img src="docs/preview-3d.png" width="46%" alt="Interactive 3D preview">
   &nbsp;
   <img src="docs/preview-2d.png" width="46%" alt="Front 2D elevation">
@@ -41,6 +46,9 @@ Filament adds **thumbnails** and **interactive Quick Look previews** for:
   orbit, pan, and zoom, soft shadows, and studio lighting.
 - **2D / 3D toggle.** Switch between a perspective 3D view and a front
   orthographic elevation.
+- **Full-color multi-material.** Bambu/Orca 3MF models painted with multiple
+  filaments render in their real slicer colors; toggle between color and a
+  neutral monochrome studio look.
 - **Browse all build plates.** Multi-plate 3MF projects get a plate selector.
 - **Model info.** Dimensions (W × D × H mm) and triangle count; print time,
   weight, and printer for 3MF.
