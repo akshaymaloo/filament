@@ -22,6 +22,16 @@
 </p>
 <p align="center"><sub>Multi-material 3MF models render in their real filament colors, with an interactive turntable preview rendered by Filament's Quick Look extension.</sub></p>
 
+### See it in action
+
+Press <b>Space</b> in Finder to preview any supported file, toggle between full
+color and a neutral studio look, and orbit the model — then open it full-screen
+in the app.
+
+<p align="center">
+  <video src="https://github.com/akshaymaloo/filament/raw/main/docs/demo.mp4" width="80%" controls muted playsinline></video>
+</p>
+
 Filament adds **thumbnails** and **interactive Quick Look previews** for:
 
 - **`.3mf`** — 3D Manufacturing Format, including Bambu Studio / OrcaSlicer
