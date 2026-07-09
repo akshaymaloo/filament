@@ -29,7 +29,7 @@ color and a neutral studio look, and orbit the model — then open it full-scree
 in the app.
 
 <p align="center">
-  <video src="https://github.com/akshaymaloo/filament/raw/main/docs/demo.mp4" width="80%" controls muted playsinline></video>
+  <img src="docs/demo.gif" width="80%" alt="Previewing 3MF and STL files in Finder with Quick Look, toggling color, and opening in the Filament app">
 </p>
 
 Filament adds **thumbnails** and **interactive Quick Look previews** for:
