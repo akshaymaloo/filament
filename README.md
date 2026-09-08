@@ -205,6 +205,36 @@ swift test                  # XCTest suite (requires a full Xcode toolchain)
   `public.standard-tesselated-geometry-format`,
   `public.geometry-definition-format`, and `public.polygon-file-format`.
 
+3MF has no Apple-defined UTI, so other apps (Shapr3D, Bambu Studio, Cadova, …)
+each declare their own identifier for `.3mf`. Launch Services then resolves
+those files to *that* UTI, and Quick Look will not invoke Filament unless the
+extensions also claim it. The preview and thumbnail extensions therefore list
+the common third-party 3MF UTIs in `QLSupportedContentTypes` in addition to
+`com.filament3d.3mf`.
+
+## Troubleshooting
+
+### 3MF Quick Look shows a generic file instead of the 3D preview
+
+Another app may have registered its own UTI for `.3mf`. Filament's extensions
+claim the common ones (including Shapr3D's `com.shapr3d.3d-manufacturing.3mf`).
+If previews are still missing:
+
+1. Re-run `./install.sh` (or log out and back in) so Launch Services and
+   Quick Look reload.
+2. Confirm the extensions are registered: `pluginkit -m | grep -i filament`
+3. Check the file's type: `mdls -name kMDItemContentType the-file.3mf`
+
+If you see an identifier Filament doesn't list, please
+[open an issue](https://github.com/akshaymaloo/filament/issues) with that UTI.
+
+### Some 3MF files fail to open (OnShape and similar)
+
+Filament's ZIP reader understands Zip64 extra fields, including archives that
+put `0xFFFFFFFF` sentinels in every central-directory size/offset even when
+the file is small (OnShape's exporter does this). If a file still fails to
+parse, please attach it to an issue.
+
 ## Contributing
 
 Issues and pull requests are welcome. Please keep `ThreeMFKit` dependency-free,

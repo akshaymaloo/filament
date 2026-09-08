@@ -53,7 +53,7 @@ public enum ThreeMFFixtureFactory {
     }
 
     /// A single-object cube (spec-style: 8 vertices / 12 triangles), no Bambu metadata.
-    public static func minimalCube(deflate: Bool) -> Data {
+    public static func minimalCube(deflate: Bool, forceZip64ExtraFields: Bool = false) -> Data {
         let modelXML = """
         <?xml version="1.0" encoding="UTF-8"?>
         <model unit="millimeter" xmlns="http://schemas.microsoft.com/3dmanufacturing/core/2015/02">
@@ -65,7 +65,7 @@ public enum ThreeMFFixtureFactory {
           </build>
         </model>
         """
-        return archive(deflate: deflate, entries: [
+        return archive(deflate: deflate, forceZip64ExtraFields: forceZip64ExtraFields, entries: [
             ("[Content_Types].xml", Data(contentTypesXML.utf8)),
             ("_rels/.rels", Data(relsXML(includeThumbnail: false).utf8)),
             ("3D/3dmodel.model", Data(modelXML.utf8))
@@ -262,12 +262,12 @@ public enum ThreeMFFixtureFactory {
         ])
     }
 
-    private static func archive(deflate: Bool, entries: [(String, Data)]) -> Data {
+    private static func archive(deflate: Bool, forceZip64ExtraFields: Bool = false, entries: [(String, Data)]) -> Data {
         var writer = ZipWriter()
         for (path, data) in entries {
             writer.addEntry(path: path, data: data, method: deflate ? .deflate : .store)
         }
-        return writer.finalize()
+        return writer.finalize(forceZip64ExtraFields: forceZip64ExtraFields)
     }
 
     // MARK: - STL / OBJ / PLY cube fixtures

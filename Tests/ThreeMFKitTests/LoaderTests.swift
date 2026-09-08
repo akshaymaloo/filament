@@ -10,8 +10,12 @@ final class MinimalCubeTests: XCTestCase {
         try assertCube(deflate: true)
     }
 
-    private func assertCube(deflate: Bool) throws {
-        let data = ThreeMFFixtureFactory.minimalCube(deflate: deflate)
+    func testZip64ExtraFieldSentinelsLoad() throws {
+        try assertCube(deflate: true, forceZip64ExtraFields: true)
+    }
+
+    private func assertCube(deflate: Bool, forceZip64ExtraFields: Bool = false) throws {
+        let data = ThreeMFFixtureFactory.minimalCube(deflate: deflate, forceZip64ExtraFields: forceZip64ExtraFields)
         let loader = ThreeMFLoader()
         let doc = try loader.load(data: data)
 

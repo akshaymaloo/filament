@@ -41,6 +41,23 @@ public enum ThreeMFInternalDiagnostics {
             }
         }
 
+        // ZIP64 extra-field round-trip: 0xFFFFFFFF sentinels + 0x0001 extra
+        // (OnShape-style), both STORE and DEFLATE.
+        for method: ZipWriter.Method in [.store, .deflate] {
+            let label = method == .store ? "store" : "deflate"
+            let payload = Data("Hello, ZIP64 extra! \(String(repeating: "y", count: 200))".utf8)
+            var writer = ZipWriter()
+            writer.addEntry(path: "test/zip64.txt", data: payload, method: method)
+            let archiveData = writer.finalize(forceZip64ExtraFields: true)
+            do {
+                let archive = try ZipArchive(data: archiveData)
+                let roundTripped = try archive.data(for: "test/zip64.txt")
+                results.append(("ZIP64 extra \(label) round-trip returns identical bytes", roundTripped == payload))
+            } catch {
+                results.append(("ZIP64 extra \(label) round-trip returns identical bytes", false))
+            }
+        }
+
         return results
     }
 }

@@ -83,6 +83,16 @@ for deflate in [false, true] {
     }
 }
 
+// MARK: - ZIP64 extra-field sentinels (OnShape-style)
+
+run("minimalCube(zip64 extra fields) load") {
+    let data = ThreeMFFixtureFactory.minimalCube(deflate: true, forceZip64ExtraFields: true)
+    let loader = ThreeMFLoader()
+    let doc = try loader.load(data: data)
+    check("[zip64-extra] exactly 1 plate", doc.plates.count == 1)
+    check("[zip64-extra] mesh triangleCount == 12", doc.plates.first?.mesh.triangleCount == 12)
+}
+
 // MARK: - translatedComponent
 
 run("translatedComponent load") {

@@ -16,6 +16,10 @@ struct ZipArchive {
     private static let zip64EocdSignature: UInt32 = 0x0606_4b50
     private static let centralHeaderSignature: UInt32 = 0x0201_4b50
     private static let localHeaderSignature: UInt32 = 0x0403_4b50
+    /// Zip64 extended information extra field (APPNOTE.TXT 4.5.3).
+    private static let zip64ExtraFieldID: UInt16 = 0x0001
+    private static let zip64FieldSentinel32: UInt32 = 0xFFFF_FFFF
+    private static let zip64FieldSentinel16: UInt16 = 0xFFFF
 
     private let data: Data
     private let entriesByPath: [String: CentralEntry]
@@ -93,24 +97,36 @@ struct ZipArchive {
                 throw ThreeMFError.corruptArchive("bad central directory signature")
             }
             let method = try reader.u16(10)
-            let compSize = Int(try reader.u32(20))
-            let uncompSize = Int(try reader.u32(24))
+            let compressedSize32 = try reader.u32(20)
+            let uncompressedSize32 = try reader.u32(24)
             let nameLen = Int(try reader.u16(28))
             let extraLen = Int(try reader.u16(30))
             let commentLen = Int(try reader.u16(32))
-            let localOffset = Int(try reader.u32(42))
+            let diskStart = try reader.u16(34)
+            let localOffset32 = try reader.u32(42)
 
             let nameData = try reader.slice(46, length: nameLen)
             guard let name = String(data: nameData, encoding: .utf8) else {
                 throw ThreeMFError.corruptArchive("non-UTF8 entry name")
             }
 
+            let extraData = extraLen > 0
+                ? try reader.slice(46 + nameLen, length: extraLen)
+                : Data()
+            let sizes = try Self.resolveZip64Sizes(
+                extra: extraData,
+                compressedSize: compressedSize32,
+                uncompressedSize: uncompressedSize32,
+                localHeaderOffset: localOffset32,
+                diskStart: diskStart
+            )
+
             let entry = CentralEntry(
                 path: name,
                 compressionMethod: method,
-                compressedSize: compSize,
-                uncompressedSize: uncompSize,
-                localHeaderOffset: localOffset
+                compressedSize: sizes.compressedSize,
+                uncompressedSize: sizes.uncompressedSize,
+                localHeaderOffset: sizes.localHeaderOffset
             )
             byPath[name] = entry
             order.append(name)
@@ -138,6 +154,68 @@ struct ZipArchive {
         let lower = path.lowercased()
         guard let match = orderedPaths.first(where: { $0.lowercased() == lower }) else { return nil }
         return try data(for: match, sizeLimit: sizeLimit)
+    }
+
+    /// Resolves compressed size / uncompressed size / local-header offset from
+    /// the Zip64 extended information extra field (header id 0x0001) when the
+    /// corresponding 32-bit central-directory field is the 0xFFFFFFFF sentinel.
+    ///
+    /// Per APPNOTE.TXT 4.5.3 the extra-field payload lists those 64-bit values
+    /// in a fixed order, but *only* for fields that were overflowed:
+    /// uncompressed size, compressed size, local header offset, disk start.
+    /// Some writers (notably OnShape) emit the sentinel even when the real
+    /// value fits in 32 bits, so this path is required for small archives too.
+    private static func resolveZip64Sizes(
+        extra: Data,
+        compressedSize: UInt32,
+        uncompressedSize: UInt32,
+        localHeaderOffset: UInt32,
+        diskStart: UInt16
+    ) throws -> (compressedSize: Int, uncompressedSize: Int, localHeaderOffset: Int) {
+        let needsUncompressed = uncompressedSize == zip64FieldSentinel32
+        let needsCompressed = compressedSize == zip64FieldSentinel32
+        let needsOffset = localHeaderOffset == zip64FieldSentinel32
+
+        if !needsUncompressed && !needsCompressed && !needsOffset {
+            return (Int(compressedSize), Int(uncompressedSize), Int(localHeaderOffset))
+        }
+
+        var cursor = 0
+        let reader = ByteReader(extra)
+        while cursor + 4 <= extra.count {
+            let headerID = try reader.u16(cursor)
+            let dataSize = Int(try reader.u16(cursor + 2))
+            let payloadOffset = cursor + 4
+            guard dataSize >= 0, payloadOffset + dataSize <= extra.count else {
+                throw ThreeMFError.corruptArchive("truncated extra field")
+            }
+            if headerID == zip64ExtraFieldID {
+                var pos = 0
+                func take64(_ field: String) throws -> Int {
+                    guard pos + 8 <= dataSize else {
+                        throw ThreeMFError.corruptArchive("truncated zip64 extra field (\(field))")
+                    }
+                    let value = try reader.u64(payloadOffset + pos)
+                    pos += 8
+                    guard value <= UInt64(Int.max) else {
+                        throw ThreeMFError.corruptArchive("zip64 \(field) exceeds addressable size")
+                    }
+                    return Int(value)
+                }
+
+                let uncompressed = needsUncompressed ? try take64("uncompressed size") : Int(uncompressedSize)
+                let compressed = needsCompressed ? try take64("compressed size") : Int(compressedSize)
+                let offset = needsOffset ? try take64("local header offset") : Int(localHeaderOffset)
+                // Disk start number is unused by this reader but may be present.
+                if diskStart == zip64FieldSentinel16, pos + 4 <= dataSize {
+                    pos += 4
+                }
+                return (compressed, uncompressed, offset)
+            }
+            cursor = payloadOffset + dataSize
+        }
+
+        throw ThreeMFError.corruptArchive("missing zip64 extra field for 0xFFFFFFFF central-directory sentinel")
     }
 
     private func extract(_ entry: CentralEntry, sizeLimit: Int) throws -> Data {

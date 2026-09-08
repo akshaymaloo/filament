@@ -57,12 +57,31 @@ struct ZipWriter {
     }
 
     /// Serializes the archive: local entries followed by the central directory and EOCD.
-    func finalize() -> Data {
+    ///
+    /// When `forceZip64ExtraFields` is true, every central-directory record
+    /// writes 0xFFFFFFFF sentinels for size/offset and stores the real 64-bit
+    /// values in a Zip64 extra field (0x0001). Matches OnShape-style 3MF
+    /// packages, which do this even when the values fit in 32 bits.
+    func finalize(forceZip64ExtraFields: Bool = false) -> Data {
         var output = body
         let centralDirStart = output.count
 
         for entry in entries {
             let nameData = Data(entry.path.utf8)
+            var extra = Data()
+            var compressedSize32 = UInt32(entry.compressed.count)
+            var uncompressedSize32 = UInt32(entry.uncompressed.count)
+            var localOffset32 = UInt32(entry.localHeaderOffset)
+            if forceZip64ExtraFields {
+                extra.appendLE(UInt16(0x0001))
+                extra.appendLE(UInt16(24))
+                extra.appendLE(UInt64(entry.uncompressed.count))
+                extra.appendLE(UInt64(entry.compressed.count))
+                extra.appendLE(UInt64(entry.localHeaderOffset))
+                compressedSize32 = 0xFFFF_FFFF
+                uncompressedSize32 = 0xFFFF_FFFF
+                localOffset32 = 0xFFFF_FFFF
+            }
             var central = Data()
             central.appendLE(Self.centralHeaderSignature)
             central.appendLE(UInt16(20))                 // version made by
@@ -72,16 +91,17 @@ struct ZipWriter {
             central.appendLE(UInt16(0))                  // mod time
             central.appendLE(UInt16(0))                  // mod date
             central.appendLE(entry.crc32)
-            central.appendLE(UInt32(entry.compressed.count))
-            central.appendLE(UInt32(entry.uncompressed.count))
+            central.appendLE(compressedSize32)
+            central.appendLE(uncompressedSize32)
             central.appendLE(UInt16(nameData.count))
-            central.appendLE(UInt16(0))                   // extra field length
+            central.appendLE(UInt16(extra.count))
             central.appendLE(UInt16(0))                   // comment length
             central.appendLE(UInt16(0))                   // disk number start
             central.appendLE(UInt16(0))                   // internal attributes
             central.appendLE(UInt32(0))                   // external attributes
-            central.appendLE(UInt32(entry.localHeaderOffset))
+            central.appendLE(localOffset32)
             central.append(nameData)
+            central.append(extra)
             output.append(central)
         }
 
@@ -136,5 +156,10 @@ private extension Data {
         append(UInt8((value >> 8) & 0xFF))
         append(UInt8((value >> 16) & 0xFF))
         append(UInt8((value >> 24) & 0xFF))
+    }
+
+    mutating func appendLE(_ value: UInt64) {
+        appendLE(UInt32(value & 0xFFFF_FFFF))
+        appendLE(UInt32(value >> 32))
     }
 }

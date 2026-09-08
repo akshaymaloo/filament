@@ -29,6 +29,13 @@
 			<key>QLSupportedContentTypes</key>
 			<array>
 				<string>com.filament3d.3mf</string>
+				<string>com.shapr3d.3d-manufacturing.3mf</string>
+				<string>com.microsoft.package.3dmanufacturing</string>
+				<string>org.3mf.threemfpackage</string>
+				<string>org.3mf.threemfformat</string>
+				<string>org.3mf.model</string>
+				<string>org.3mf.3mf</string>
+				<string>com.bambulab.3mf</string>
 				<string>public.standard-tesselated-geometry-format</string>
 				<string>public.geometry-definition-format</string>
 				<string>public.polygon-file-format</string>
