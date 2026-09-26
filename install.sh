@@ -8,6 +8,11 @@
 #   DEVELOPMENT_TEAM=ABCDE12345 ./install.sh
 #                                Build with your Apple Developer Team instead
 #   ./install.sh --uninstall     Remove the installed app and reset Quick Look
+#   ./install.sh --prefer-filament-stl
+#                                Also use Filament (not Apple's built-in Hydra
+#                                preview) for STL/OBJ/PLY Quick Look
+#   ./install.sh --restore-apple-stl
+#                                Undo --prefer-filament-stl
 #
 # No Apple Developer account is required for local use: by default the app is
 # ad-hoc "signed to run locally", which is enough for macOS to load its Quick
@@ -33,26 +38,82 @@ info()  { printf "    %s\n" "$1"; }
 warn()  { printf "%s!  %s%s\n" "$YELLOW" "$1" "$RESET"; }
 die()   { printf "%serror:%s %s\n" "$RED$BOLD" "$RESET" "$1" >&2; exit 1; }
 
+# --- Apple's built-in 3D Quick Look (Hydra) ---------------------------------
+# On macOS 26+, Apple's HydraQLPreviewExtension claims the exact STL/OBJ/PLY
+# types and always wins over third-party Quick Look extensions. The only
+# supported way to let Filament preview them is to disable Hydra's election
+# for this user with pluginkit (reversible; system files are not modified).
+# Side effect: Hydra also previews USD/MaterialX/Alembic; those fall back to
+# Apple's generic SceneKit Quick Look while Hydra is disabled.
+HYDRA_ID="com.apple.HydraQLPreviewExtension"
+
+# Capture pluginkit output before grepping: with `set -o pipefail`, piping it
+# into `grep -q` can SIGPIPE pluginkit and report a false failure.
+plugin_list() { pluginkit "$@" 2>/dev/null || true; }
+hydra_present() { [ -n "$(plugin_list -mA -i "$HYDRA_ID")" ]; }
+hydra_ignored() {
+  local state
+  state="$(plugin_list -mAv -i "$HYDRA_ID")"
+  [[ "$state" =~ ^[[:space:]]*- ]]
+}
+
+prefer_filament_stl() {
+  if ! hydra_present; then
+    info "Apple's Hydra 3D preview isn't present on this macOS — nothing to change."
+    return 0
+  fi
+  pluginkit -e ignore -i "$HYDRA_ID" || { warn "pluginkit could not disable $HYDRA_ID"; return 0; }
+  qlmanage -r >/dev/null 2>&1 || true
+  qlmanage -r cache >/dev/null 2>&1 || true
+  info "Disabled $HYDRA_ID for this user; Filament now previews STL/OBJ/PLY."
+  info "Undo any time with: ./install.sh --restore-apple-stl"
+}
+
+restore_apple_stl() {
+  if hydra_present && hydra_ignored; then
+    pluginkit -e default -i "$HYDRA_ID" || true
+    qlmanage -r >/dev/null 2>&1 || true
+    qlmanage -r cache >/dev/null 2>&1 || true
+    info "Re-enabled Apple's $HYDRA_ID."
+  fi
+}
+
+# --- option parsing ----------------------------------------------------------
+SET_DEFAULTS=1
+PREFER_FILAMENT_STL=0
+MODE=install
+for arg in "$@"; do
+  case "$arg" in
+    --no-defaults) SET_DEFAULTS=0 ;;
+    --prefer-filament-stl) PREFER_FILAMENT_STL=1 ;;
+    --restore-apple-stl) MODE=restore-stl ;;
+    --uninstall) MODE=uninstall ;;
+    *) die "unknown option: $arg (use --no-defaults, --prefer-filament-stl, --restore-apple-stl, or --uninstall)" ;;
+  esac
+done
+
 # --- uninstall ---------------------------------------------------------------
-if [ "${1:-}" = "--uninstall" ]; then
+if [ "$MODE" = "uninstall" ]; then
   step "Uninstalling Filament"
   osascript -e 'tell application "Filament" to quit' >/dev/null 2>&1 || true
   rm -rf "$INSTALL_DIR/$APP_NAME"
   "$LSREGISTER" -u "$INSTALL_DIR/$APP_NAME" >/dev/null 2>&1 || true
+  restore_apple_stl
   qlmanage -r >/dev/null 2>&1 || true
   qlmanage -r cache >/dev/null 2>&1 || true
   info "Removed $INSTALL_DIR/$APP_NAME and reset Quick Look."
   exit 0
 fi
 
-# --- option parsing ----------------------------------------------------------
-SET_DEFAULTS=1
-for arg in "$@"; do
-  case "$arg" in
-    --no-defaults) SET_DEFAULTS=0 ;;
-    -*) die "unknown option: $arg (use --no-defaults or --uninstall)" ;;
-  esac
-done
+if [ "$MODE" = "restore-stl" ]; then
+  step "Restoring Apple's built-in STL/OBJ/PLY Quick Look"
+  if hydra_present && hydra_ignored; then
+    restore_apple_stl
+  else
+    info "Apple's Hydra preview is already enabled — nothing to change."
+  fi
+  exit 0
+fi
 
 # --- 1. prerequisites --------------------------------------------------------
 step "Checking prerequisites"
@@ -152,13 +213,15 @@ qlmanage -r cache >/dev/null 2>&1 || true
 # --- 6. verify ---------------------------------------------------------------
 step "Verifying"
 registered=""
+filament_plugins=""
 for _ in 1 2 3 4 5 6 7 8; do
-  if pluginkit -m 2>/dev/null | grep -qi "filament"; then registered=1; break; fi
+  filament_plugins="$(plugin_list -m | grep -i "filament" || true)"
+  if [ -n "$filament_plugins" ]; then registered=1; break; fi
   sleep 2
 done
 if [ -n "$registered" ]; then
   info "Quick Look extensions are registered:"
-  pluginkit -m 2>/dev/null | grep -i "filament" | sed 's/^/      /'
+  printf '%s\n' "$filament_plugins" | sed 's/^/      /'
 else
   warn "Extensions not listed yet — they may take a moment. Try re-running, or log out/in once."
 fi
@@ -173,7 +236,17 @@ if [ "$SET_DEFAULTS" = "1" ]; then
   fi
 fi
 
+# --- 8. optionally take over STL/OBJ/PLY previews from Apple -----------------
+if [ "$PREFER_FILAMENT_STL" = "1" ]; then
+  step "Using Filament for STL/OBJ/PLY Quick Look"
+  prefer_filament_stl
+fi
+
 printf "\n%s%sFilament is installed.%s\n" "$BOLD" "$GREEN" "$RESET"
+if [ "$PREFER_FILAMENT_STL" != "1" ] && hydra_present && ! hydra_ignored; then
+  info "Note: Apple's built-in preview handles STL/OBJ/PLY on this macOS."
+  info "To use Filament for those too: ./install.sh --prefer-filament-stl"
+fi
 cat <<EOF
 ${DIM}
   • Select a .3mf, .stl, .obj, or .ply file in Finder and press Space for the preview.

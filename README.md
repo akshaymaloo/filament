@@ -15,6 +15,8 @@
   <img src="https://img.shields.io/badge/license-MIT-blue" alt="MIT license">
 </p>
 
+<p align="center"><b>English</b> · <a href="README.es-ES.md">Español</a></p>
+
 ---
 
 <p align="center">
@@ -93,6 +95,23 @@ DEVELOPMENT_TEAM=ABCDE12345 ./install.sh
 ```
 
 Uninstall any time with `./install.sh --uninstall`.
+
+#### STL / OBJ / PLY previews on macOS 26+
+
+macOS 26 ships its own 3D Quick Look extension (`com.apple.HydraQLPreviewExtension`)
+that claims STL, OBJ, and PLY and always wins over third-party extensions, so by
+default Apple previews those formats and Filament previews 3MF. To use Filament
+for all of them:
+
+```bash
+./install.sh --prefer-filament-stl   # disable Apple's Hydra preview for your user
+./install.sh --restore-apple-stl     # undo
+```
+
+This runs `pluginkit -e ignore -i com.apple.HydraQLPreviewExtension` — a
+per-user, reversible setting that doesn't modify system files. While it's
+active, USD / MaterialX / Alembic files fall back to Apple's generic SceneKit
+preview. `--uninstall` restores Apple's preview automatically.
 
 > If Space-bar previews don't show up right after install, log out and back in
 > once so Finder reloads the Quick Look extensions.
@@ -213,6 +232,12 @@ the common third-party 3MF UTIs in `QLSupportedContentTypes` in addition to
 `com.filament3d.3mf`.
 
 ## Troubleshooting
+
+### STL/OBJ/PLY open in Apple's preview instead of Filament
+
+That's Apple's built-in Hydra preview on macOS 26+. See
+[STL / OBJ / PLY previews on macOS 26+](#stl--obj--ply-previews-on-macos-26)
+and run `./install.sh --prefer-filament-stl`.
 
 ### 3MF Quick Look shows a generic file instead of the 3D preview
 

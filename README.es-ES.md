@@ -1,5 +1,3 @@
-
-
 <p align="center">
   <img src="docs/icon.png" width="128" alt="Icono de la aplicación Filament">
 </p>
@@ -16,6 +14,8 @@
   <img src="https://img.shields.io/badge/macOS-14%2B-black?logo=apple" alt="macOS 14+">
   <img src="https://img.shields.io/badge/license-MIT-blue" alt="Licencia MIT">
 </p>
+
+<p align="center"><a href="README.md">English</a> · <b>Español</b></p>
 
 ---
 
@@ -77,6 +77,23 @@ DEVELOPMENT_TEAM=ABCDE12345 ./install.sh
 ```
 
 Desinstala en cualquier momento con `./install.sh --uninstall`.
+
+#### Vistas previas de STL / OBJ / PLY en macOS 26+
+
+macOS 26 incluye su propia extensión de Quick Look 3D (`com.apple.HydraQLPreviewExtension`),
+que reclama STL, OBJ y PLY y siempre tiene prioridad sobre las extensiones de terceros. Por eso,
+de forma predeterminada Apple muestra esos formatos y Filament muestra 3MF. Para usar Filament
+con todos ellos:
+
+```bash
+./install.sh --prefer-filament-stl   # desactiva la vista previa Hydra de Apple para tu usuario
+./install.sh --restore-apple-stl     # deshacer
+```
+
+Esto ejecuta `pluginkit -e ignore -i com.apple.HydraQLPreviewExtension`, un ajuste por
+usuario y reversible que no modifica archivos del sistema. Mientras está activo, los archivos
+USD / MaterialX / Alembic usan la vista previa genérica de SceneKit de Apple. `--uninstall`
+restaura automáticamente la vista previa de Apple.
 
 > Si las vistas previas con la barra espaciadora no aparecen justo después de instalar, cierra y vuelve a iniciar sesión una vez para que Finder recargue las extensiones de Quick Look.
 
@@ -168,6 +185,41 @@ swift test                  #套件 de pruebas XCTest (requiere la herramienta X
 - `com.filament3d.3mf` — tipo importado personalizado para `.3mf` (cumple con `public.data` y `public.3d-content`, MIME `model/3mf`).
 - STL/OBJ/PLY usan los tipos declarados por el sistema `public.standard-tesselated-geometry-format`,
   `public.geometry-definition-format` y `public.polygon-file-format`.
+
+3MF no tiene un UTI definido por Apple, así que otras apps (Shapr3D, Bambu Studio, Cadova, …)
+declaran su propio identificador para `.3mf`. Launch Services resuelve entonces esos archivos a
+*ese* UTI, y Quick Look no invoca a Filament a menos que las extensiones también lo reclamen. Por
+eso las extensiones de vista previa y miniaturas incluyen los UTI de 3MF de terceros más comunes
+en `QLSupportedContentTypes`, además de `com.filament3d.3mf`.
+
+## Solución de problemas
+
+### STL/OBJ/PLY se abren en la vista previa de Apple en lugar de Filament
+
+Es la vista previa Hydra integrada de Apple en macOS 26+. Consulta
+[Vistas previas de STL / OBJ / PLY en macOS 26+](#vistas-previas-de-stl--obj--ply-en-macos-26)
+y ejecuta `./install.sh --prefer-filament-stl`.
+
+### Quick Look muestra un archivo genérico en lugar de la vista previa 3D de un 3MF
+
+Puede que otra app haya registrado su propio UTI para `.3mf`. Las extensiones de Filament
+reclaman los más comunes (incluido `com.shapr3d.3d-manufacturing.3mf` de Shapr3D). Si
+las vistas previas siguen sin aparecer:
+
+1. Vuelve a ejecutar `./install.sh` (o cierra sesión y vuelve a entrar) para que Launch
+   Services y Quick Look se recarguen.
+2. Confirma que las extensiones están registradas: `pluginkit -m | grep -i filament`
+3. Comprueba el tipo del archivo: `mdls -name kMDItemContentType el-archivo.3mf`
+
+Si ves un identificador que Filament no incluye,
+[abre un issue](https://github.com/akshaymaloo/filament/issues) con ese UTI.
+
+### Algunos archivos 3MF no se abren (OnShape y similares)
+
+El lector ZIP de Filament entiende los campos extra Zip64, incluidos los archivos que ponen
+centinelas `0xFFFFFFFF` en todos los tamaños/desplazamientos del directorio central aunque el
+archivo sea pequeño (el exportador de OnShape lo hace). Si un archivo sigue sin abrirse,
+adjúntalo a un issue.
 
 ## Contribuciones
 
