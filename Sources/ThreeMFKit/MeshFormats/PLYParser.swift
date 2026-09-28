@@ -58,7 +58,7 @@ public enum PLYParser {
     /// headers claiming absurd counts relative to available bytes.
     private static let maxElementCount = 50_000_000
 
-    public static func parse(data: Data) throws -> TriangleMesh {
+    public static func parse(data: Data, maxTriangles: Int? = nil, shouldCancel: (() -> Bool)? = nil) throws -> TriangleMesh {
         // Locate the "end_header" marker at the byte level first, since the
         // body may be raw binary and not valid UTF-8 as a whole.
         guard let endHeaderRange = data.range(of: Data("end_header".utf8)) else {
@@ -146,6 +146,17 @@ public enum PLYParser {
             throw ThreeMFError.malformedMesh("PLY file declares no elements.")
         }
 
+        // Cheap pre-check: a face element's declared instance count is a
+        // lower bound on the eventual triangle count (an n-gon fan yields
+        // at least one triangle per face), so this rejects grossly oversized
+        // files before any per-face parsing/allocation happens.
+        if let maxTriangles {
+            let declaredFaceCount = elements.first(where: { $0.name == "face" })?.count ?? 0
+            if declaredFaceCount > maxTriangles {
+                throw ThreeMFError.meshTooLarge(triangles: declaredFaceCount, limit: maxTriangles)
+            }
+        }
+
         switch resolvedFormat {
         case .ascii:
             let bodyData = data[bodyStart...]
@@ -154,10 +165,10 @@ public enum PLYParser {
             }
             let tokens = bodyText.split(whereSeparator: { $0.isWhitespace })
             var cursor = ASCIICursor(tokens: tokens)
-            return try extractMesh(elements: elements, cursor: &cursor)
+            return try extractMesh(elements: elements, cursor: &cursor, maxTriangles: maxTriangles, shouldCancel: shouldCancel)
         case .binaryLittleEndian, .binaryBigEndian:
             var cursor = BinaryCursor(data: data, offset: bodyStart, bigEndian: resolvedFormat == .binaryBigEndian)
-            return try extractMesh(elements: elements, cursor: &cursor)
+            return try extractMesh(elements: elements, cursor: &cursor, maxTriangles: maxTriangles, shouldCancel: shouldCancel)
         }
     }
 
@@ -244,9 +255,11 @@ public enum PLYParser {
     /// positions (`x`/`y`/`z` scalar properties) and face vertex-index lists
     /// (`vertex_indices`/`vertex_index`), while correctly consuming (and
     /// discarding) all other properties/elements so the cursor stays aligned.
-    private static func extractMesh<C: ValueCursor>(elements: [Element], cursor: inout C) throws -> TriangleMesh {
+    private static func extractMesh<C: ValueCursor>(elements: [Element], cursor: inout C, maxTriangles: Int?, shouldCancel: (() -> Bool)?) throws -> TriangleMesh {
         var positions: [SIMD3<Float>] = []
         var indices: [UInt32] = []
+        var triangleCount = 0
+        var instancePollCounter = 0
 
         for element in elements {
             let isVertex = element.name == "vertex"
@@ -283,6 +296,10 @@ public enum PLYParser {
             }
 
             for _ in 0..<element.count {
+                instancePollCounter += 1
+                if instancePollCounter & 0xFFFF == 0, let shouldCancel, shouldCancel() {
+                    throw ThreeMFError.cancelled
+                }
                 var xv = 0.0, yv = 0.0, zv = 0.0
                 var faceIndices: [UInt32] = []
 
@@ -304,8 +321,10 @@ public enum PLYParser {
                         for _ in 0..<n {
                             let indexValue = try cursor.readScalar(indexType)
                             if isFace && pi == faceListIdx {
-                                guard indexValue >= 0 else {
-                                    throw ThreeMFError.malformedMesh("PLY face vertex index is negative.")
+                                // `UInt32(indexValue)` traps for out-of-range or
+                                // non-finite doubles, so validate explicitly.
+                                guard indexValue.isFinite, indexValue >= 0, indexValue <= Double(UInt32.max) else {
+                                    throw ThreeMFError.malformedMesh("PLY face vertex index \(indexValue) is out of range.")
                                 }
                                 faceIndices.append(UInt32(indexValue))
                             }
@@ -321,6 +340,10 @@ public enum PLYParser {
                         throw ThreeMFError.malformedMesh("PLY 'face' element has fewer than 3 vertex indices.")
                     }
                     // Triangulate an n-gon via a fan: (v0, vi, vi+1).
+                    triangleCount += faceIndices.count - 2
+                    if let maxTriangles, triangleCount > maxTriangles {
+                        throw ThreeMFError.meshTooLarge(triangles: triangleCount, limit: maxTriangles)
+                    }
                     for i in 1..<(faceIndices.count - 1) {
                         indices.append(faceIndices[0])
                         indices.append(faceIndices[i])

@@ -374,6 +374,253 @@ run("ModelLoader.load(url:) dispatches by extension") {
     checkModelDocument("ModelLoader.load(url:) STL", doc: doc, expectedName: "my-cube")
 }
 
+// MARK: - Fix 1: out-of-range / overflowing 3MF triangle indices
+
+run("3MF triangle with out-of-range vertex index is dropped, others kept") {
+    let data = ThreeMFFixtureFactory.triangleOutOfRangeCube()
+    let doc = try ThreeMFLoader().load(data: data)
+    guard let plate = doc.plates.first else {
+        check("triangleOutOfRangeCube: plate available", false)
+        return
+    }
+    check("triangleOutOfRangeCube: bad triangle dropped, 11 kept", plate.mesh.triangleCount == 11)
+    check("triangleOutOfRangeCube: positions untouched (8 vertices)", plate.mesh.positions.count == 8)
+}
+
+run("3MF triangle index with 20-digit overflowing value is dropped, others kept") {
+    let data = ThreeMFFixtureFactory.hugeDigitTriangleIndexCube()
+    let doc = try ThreeMFLoader().load(data: data)
+    guard let plate = doc.plates.first else {
+        check("hugeDigitTriangleIndexCube: plate available", false)
+        return
+    }
+    check("hugeDigitTriangleIndexCube: no crash, bad triangle dropped (11 kept)", plate.mesh.triangleCount == 11)
+}
+
+run("3MF vertex with huge exponent coordinate loads without crash") {
+    let data = ThreeMFFixtureFactory.hugeExponentVertexCube()
+    let doc = try ThreeMFLoader().load(data: data)
+    guard let plate = doc.plates.first else {
+        check("hugeExponentVertexCube: plate available", false)
+        return
+    }
+    check("hugeExponentVertexCube: all 12 triangles kept (vertex clamped, not dropped)", plate.mesh.triangleCount == 12)
+    if let bbox = plate.mesh.boundingBox {
+        check("hugeExponentVertexCube: bounding box min is finite", bbox.min.x.isFinite && bbox.min.y.isFinite && bbox.min.z.isFinite)
+        check("hugeExponentVertexCube: bounding box max is finite", bbox.max.x.isFinite && bbox.max.y.isFinite && bbox.max.z.isFinite)
+    } else {
+        check("hugeExponentVertexCube: bounding box present", false)
+    }
+}
+
+run("makeGeometry() on a hand-built mesh with a bad index excludes it, keeps parallel color indices") {
+    // 4 vertices, 2 triangles: the second references vertex 99 (out of range).
+    let positions: [SIMD3<Float>] = [
+        SIMD3(0, 0, 0), SIMD3(1, 0, 0), SIMD3(0, 1, 0), SIMD3(1, 1, 0)
+    ]
+    let indices: [UInt32] = [0, 1, 2, 1, 99, 3]
+    let colorIndices: [UInt8] = [0, 1]
+    let mesh = TriangleMesh(positions: positions, indices: indices, triangleColorIndices: colorIndices)
+    check("hand-built mesh: triangleCount == 2 (raw, unsanitized)", mesh.triangleCount == 2)
+
+    #if canImport(SceneKit)
+    if let geometry = mesh.makeGeometry() {
+        let primitiveCounts = geometry.elements.map { $0.primitiveCount }
+        check("makeGeometry(): bad triangle excluded (1 primitive remains)", primitiveCounts.reduce(0, +) == 1)
+    } else {
+        check("makeGeometry(): non-nil for a mesh with a valid triangle remaining", false)
+    }
+    #endif
+}
+
+// MARK: - Fix 2: ZipArchive EOCD disambiguation with a fake signature in a trailing comment
+
+run("ZIP with trailing comment containing a fake EOCD signature still opens") {
+    let data = ThreeMFFixtureFactory.minimalCubeWithFakeEOCDInComment()
+    let doc = try ThreeMFLoader().load(data: data)
+    check("minimalCubeWithFakeEOCDInComment: 1 plate", doc.plates.count == 1)
+    check("minimalCubeWithFakeEOCDInComment: triangleCount == 12", doc.plates.first?.mesh.triangleCount == 12)
+}
+
+// MARK: - Fix 5: object type="support"/"other" excluded, "solidsupport" kept
+
+run("object type=support/other excluded from render, solidsupport kept") {
+    let data = ThreeMFFixtureFactory.objectTypesFixture()
+    let doc = try ThreeMFLoader().load(data: data)
+    guard let plate = doc.plates.first else {
+        check("objectTypesFixture: plate available", false)
+        return
+    }
+    // 4 build items, 12 triangles each: model (kept) + support (excluded, 0)
+    // + other (excluded, 0) + solidsupport (kept) == 24.
+    check("objectTypesFixture: triangleCount == 24 (model + solidsupport only)", plate.mesh.triangleCount == 24)
+}
+
+// MARK: - Fix 6: aggregate zip-bomb cap, unlimited-metadata cap, DEFLATE ratio bomb
+
+run("tiny maxTotalUncompressedBytes rejects an otherwise-valid package") {
+    var options = ThreeMFLoader.Options.default
+    options.maxTotalUncompressedBytes = 32
+    let data = ThreeMFFixtureFactory.minimalCube(deflate: true)
+    do {
+        _ = try ThreeMFLoader(options: options).load(data: data)
+        check("tiny maxTotalUncompressedBytes: load throws", false)
+    } catch {
+        check("tiny maxTotalUncompressedBytes: load throws", true)
+    }
+}
+
+run("tiny maxMetadataBytes rejects a package with metadata configs") {
+    var options = ThreeMFLoader.Options.default
+    options.maxMetadataBytes = 8
+    let data = ThreeMFFixtureFactory.bambuTwoPlates()
+    do {
+        _ = try ThreeMFLoader(options: options).load(data: data)
+        check("tiny maxMetadataBytes: load throws", false)
+    } catch {
+        check("tiny maxMetadataBytes: load throws", true)
+    }
+}
+
+run("DEFLATE entry with a lying (implausible-ratio) declared size is rejected") {
+    var options = ThreeMFLoader.Options.default
+    // Raise the per-part cap well above the claimed size so the ratio check
+    // (not the plain size-limit check) is what fires.
+    options.maxModelPartBytes = 2 * 1024 * 1024 * 1024
+    let data = ThreeMFFixtureFactory.lyingHeaderEntry(claimedUncompressedBytes: 1024 * 1024 * 1024)
+    do {
+        _ = try ThreeMFLoader(options: options).load(data: data)
+        check("lyingHeaderEntry: load throws before over-allocating", false)
+    } catch {
+        check("lyingHeaderEntry: load throws before over-allocating", true)
+    }
+}
+
+// MARK: - Fix 3: triangle budget / cancellation
+
+run("maxTriangles exceeded throws meshTooLarge (3MF)") {
+    var options = ThreeMFLoader.Options.default
+    options.maxTriangles = 5
+    let data = ThreeMFFixtureFactory.minimalCube(deflate: false)
+    do {
+        _ = try ThreeMFLoader(options: options).load(data: data)
+        check("3MF maxTriangles: throws meshTooLarge", false)
+    } catch ThreeMFError.meshTooLarge {
+        check("3MF maxTriangles: throws meshTooLarge", true)
+    } catch {
+        check("3MF maxTriangles: throws meshTooLarge", false)
+    }
+}
+
+run("shouldCancel: true throws cancelled (3MF)") {
+    var options = ThreeMFLoader.Options.default
+    options.shouldCancel = { true }
+    let data = ThreeMFFixtureFactory.minimalCube(deflate: false)
+    do {
+        _ = try ThreeMFLoader(options: options).load(data: data)
+        check("3MF shouldCancel: throws cancelled", false)
+    } catch ThreeMFError.cancelled {
+        check("3MF shouldCancel: throws cancelled", true)
+    } catch {
+        check("3MF shouldCancel: throws cancelled", false)
+    }
+}
+
+run("maxTriangles exceeded throws meshTooLarge (STL)") {
+    let data = ThreeMFFixtureFactory.stlBinaryCube()
+    do {
+        _ = try STLParser.parse(data: data, maxTriangles: 5)
+        check("STL maxTriangles: throws meshTooLarge", false)
+    } catch ThreeMFError.meshTooLarge {
+        check("STL maxTriangles: throws meshTooLarge", true)
+    } catch {
+        check("STL maxTriangles: throws meshTooLarge", false)
+    }
+}
+
+run("shouldCancel: true throws cancelled (STL)") {
+    let data = ThreeMFFixtureFactory.stlBinaryCube()
+    do {
+        _ = try STLParser.parse(data: data, shouldCancel: { true })
+        check("STL shouldCancel: throws cancelled", false)
+    } catch ThreeMFError.cancelled {
+        check("STL shouldCancel: throws cancelled", true)
+    } catch {
+        check("STL shouldCancel: throws cancelled", false)
+    }
+}
+
+// MARK: - Fix 4: STL binary detection variants
+
+run("STL binary cube with 16 trailing bytes still parses as binary") {
+    let data = ThreeMFFixtureFactory.stlBinaryCubeWithTrailingBytes()
+    let mesh = try STLParser.parse(data: data)
+    check("stlBinaryCubeWithTrailingBytes: triangleCount == 12", mesh.triangleCount == 12)
+}
+
+run("STL binary cube whose header starts with 'solid ' still parses as binary (exact-size wins)") {
+    let data = ThreeMFFixtureFactory.stlBinaryCubeWithSolidPrefix()
+    let mesh = try STLParser.parse(data: data)
+    check("stlBinaryCubeWithSolidPrefix: triangleCount == 12", mesh.triangleCount == 12)
+}
+
+run("STL binary cube with zeroed declared count still parses via body-size fallback") {
+    let data = ThreeMFFixtureFactory.stlBinaryCubeWithZeroDeclaredCount()
+    let mesh = try STLParser.parse(data: data)
+    check("stlBinaryCubeWithZeroDeclaredCount: triangleCount == 12", mesh.triangleCount == 12)
+}
+
+run("ModelLoader sniffing (no extension) detects trailing-bytes binary STL") {
+    let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent("ThreeMFKitValidate-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: tempDir) }
+
+    let fileURL = tempDir.appendingPathComponent("mystery-file")
+    try ThreeMFFixtureFactory.stlBinaryCubeWithTrailingBytes().write(to: fileURL)
+
+    let doc = try modelLoader.load(url: fileURL)
+    check("sniffed trailing-bytes STL: triangleCount == 12", doc.plates.first?.mesh.triangleCount == 12)
+}
+
+// MARK: - Fix 7: PLY face index overflow guard
+
+run("PLY ascii face index 5e9 throws malformedMesh, not a crash") {
+    let data = ThreeMFFixtureFactory.plyASCIICubeWithHugeFaceIndex()
+    do {
+        _ = try PLYParser.parse(data: data)
+        check("plyASCIICubeWithHugeFaceIndex: throws malformedMesh", false)
+    } catch ThreeMFError.malformedMesh {
+        check("plyASCIICubeWithHugeFaceIndex: throws malformedMesh", true)
+    } catch {
+        check("plyASCIICubeWithHugeFaceIndex: throws malformedMesh", false)
+    }
+}
+
+// MARK: - Component fan-out ("billion laughs") guard
+
+run("component fan-out bomb is bounded") {
+    var options = ThreeMFLoader.Options.default
+    options.maxTriangles = 10_000
+    do {
+        _ = try ThreeMFLoader(options: options).load(data: ThreeMFFixtureFactory.componentFanOut(depth: 6, fanOut: 10))
+        check("fan-out 10^6 cubes: throws meshTooLarge", false)
+    } catch ThreeMFError.meshTooLarge {
+        check("fan-out 10^6 cubes: throws meshTooLarge", true)
+    } catch {
+        check("fan-out 10^6 cubes: throws meshTooLarge (got \(error))", false)
+    }
+    do {
+        _ = try ThreeMFLoader().load(data: ThreeMFFixtureFactory.componentFanOut(depth: 7, fanOut: 10, leafType: "support"))
+        check("fan-out 10^7 empty leaves: hits visit cap", false)
+    } catch ThreeMFError.malformedXML {
+        check("fan-out 10^7 empty leaves: hits visit cap", true)
+    } catch {
+        check("fan-out 10^7 empty leaves: hits visit cap (got \(error))", false)
+    }
+    let small = try? ThreeMFLoader().load(data: ThreeMFFixtureFactory.componentFanOut(depth: 2, fanOut: 3))
+    check("fan-out 3x3 cubes: 108 triangles", small?.plates.first?.mesh.triangleCount == 108)
+}
+
 print("========================================")
 print("\(checkCount - failureCount)/\(checkCount) checks passed")
 if failureCount > 0 {

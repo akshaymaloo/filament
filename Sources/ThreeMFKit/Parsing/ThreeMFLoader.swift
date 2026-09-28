@@ -7,17 +7,46 @@ public struct ThreeMFLoader {
         public var parsePlates: Bool
         public var maxModelPartBytes: Int
         public var maxThumbnailBytes: Int
+        /// Per-load cap on total triangles across every resolved build item
+        /// (a single part under budget can still balloon after resolution,
+        /// e.g. many build items referencing the same heavy object). `nil`
+        /// means unlimited. Also enforced incrementally while scanning each
+        /// model part, so an oversized single part fails fast without
+        /// finishing the parse.
+        public var maxTriangles: Int?
+        /// Polled periodically (not on every element) during XML scanning,
+        /// STL/OBJ/PLY parsing, and build-item resolution; return `true` to
+        /// abort the load with `ThreeMFError.cancelled`.
+        public var shouldCancel: (() -> Bool)?
+        /// Cap on the sum of every extracted (uncompressed) ZIP entry across
+        /// the whole load, guarding against a zip bomb assembled from many
+        /// small-looking entries (or one entry with a lying header). Charged
+        /// against the *declared* size before allocation.
+        public var maxTotalUncompressedBytes: Int
+        /// Per-entry cap applied to metadata/config/rels reads
+        /// (`_rels/.rels`, `Metadata/model_settings.config`,
+        /// `Metadata/project_settings.config`, `Metadata/plate_N.json`),
+        /// which previously had no size limit at all.
+        public var maxMetadataBytes: Int
 
         public init(
             parseMesh: Bool = true,
             parsePlates: Bool = true,
             maxModelPartBytes: Int = 500 * 1024 * 1024,
-            maxThumbnailBytes: Int = 20 * 1024 * 1024
+            maxThumbnailBytes: Int = 20 * 1024 * 1024,
+            maxTriangles: Int? = nil,
+            shouldCancel: (() -> Bool)? = nil,
+            maxTotalUncompressedBytes: Int = 1024 * 1024 * 1024,
+            maxMetadataBytes: Int = 64 * 1024 * 1024
         ) {
             self.parseMesh = parseMesh
             self.parsePlates = parsePlates
             self.maxModelPartBytes = maxModelPartBytes
             self.maxThumbnailBytes = maxThumbnailBytes
+            self.maxTriangles = maxTriangles
+            self.shouldCancel = shouldCancel
+            self.maxTotalUncompressedBytes = maxTotalUncompressedBytes
+            self.maxMetadataBytes = maxMetadataBytes
         }
 
         public static var `default`: Options { Options() }
@@ -36,18 +65,19 @@ public struct ThreeMFLoader {
     }
 
     public func load(data: Data) throws -> ThreeMFDocument {
-        let zip = try ZipArchive(data: data)
+        let budget = ExtractionBudget(limit: options.maxTotalUncompressedBytes)
+        let zip = try ZipArchive(data: data, budget: budget)
 
         let modelPath = try resolveModelPartPath(in: zip)
         guard let modelData = try zip.dataCaseInsensitive(for: modelPath, sizeLimit: options.maxModelPartBytes) else {
             throw ThreeMFError.missingModelPart
         }
 
-        let model = try ModelXMLParser.parse(data: modelData, parseMesh: options.parseMesh)
+        let model = try ModelXMLParser.parse(data: modelData, parseMesh: options.parseMesh, maxTriangles: options.maxTriangles, shouldCancel: options.shouldCancel)
 
         var plateAssignments: [BambuPlateAssignment] = []
         var objectExtruder: [Int: Int] = [:]
-        if options.parsePlates, let settingsData = try zip.dataCaseInsensitive(for: "Metadata/model_settings.config") {
+        if options.parsePlates, let settingsData = try zip.dataCaseInsensitive(for: "Metadata/model_settings.config", sizeLimit: options.maxMetadataBytes) {
             if let parsed = try? BambuModelSettingsParser.parse(data: settingsData) {
                 plateAssignments = parsed.plates
                 objectExtruder = parsed.objectExtruder
@@ -62,17 +92,17 @@ public struct ThreeMFLoader {
             guard let partPath else { return model.objects } // root part
             if let cached = partCache[partPath] { return cached }
             guard let partData = try zip.dataCaseInsensitive(for: partPath, sizeLimit: options.maxModelPartBytes) else { return [:] }
-            let parsed = try ModelXMLParser.parse(data: partData, parseMesh: options.parseMesh)
+            let parsed = try ModelXMLParser.parse(data: partData, parseMesh: options.parseMesh, maxTriangles: options.maxTriangles, shouldCancel: options.shouldCancel)
             partCache[partPath] = parsed.objects
             return parsed.objects
         }
-        let resolvedItems = try MeshResolver.resolveBuildItems(buildItems: model.buildItems, provider: provider, objectExtruder: objectExtruder)
+        let resolvedItems = try MeshResolver.resolveBuildItems(buildItems: model.buildItems, provider: provider, objectExtruder: objectExtruder, maxTriangles: options.maxTriangles, shouldCancel: options.shouldCancel)
 
         let packageThumbnail = try loadPackageThumbnail(zip: zip)
 
         var projectColors: [String]? = nil
         var projectTypes: [String]? = nil
-        if let projectData = try zip.dataCaseInsensitive(for: "Metadata/project_settings.config") {
+        if let projectData = try zip.dataCaseInsensitive(for: "Metadata/project_settings.config", sizeLimit: options.maxMetadataBytes) {
             let parsed = BambuPlateStatsParser.parseProjectSettings(data: projectData)
             projectColors = parsed.colors
             projectTypes = parsed.types
@@ -104,7 +134,8 @@ public struct ThreeMFLoader {
     }
 
     public func extractPrimaryThumbnail(data: Data) throws -> Data? {
-        let zip = try ZipArchive(data: data)
+        let budget = ExtractionBudget(limit: options.maxTotalUncompressedBytes)
+        let zip = try ZipArchive(data: data, budget: budget)
         let candidates = [
             "Metadata/plate_1.png",
             "Metadata/thumbnail.png",
@@ -123,7 +154,7 @@ public struct ThreeMFLoader {
     // MARK: - Internals
 
     private func resolveModelPartPath(in zip: ZipArchive) throws -> String {
-        if let relsData = try zip.data(for: "_rels/.rels"),
+        if let relsData = try zip.data(for: "_rels/.rels", sizeLimit: options.maxMetadataBytes),
            let rels = try? OPCRelationships.parse(data: relsData),
            let modelPath = rels.modelPartPath {
             return modelPath
@@ -139,7 +170,7 @@ public struct ThreeMFLoader {
     }
 
     private func loadPackageThumbnail(zip: ZipArchive) throws -> Data? {
-        if let relsData = try zip.data(for: "_rels/.rels"),
+        if let relsData = try zip.data(for: "_rels/.rels", sizeLimit: options.maxMetadataBytes),
            let rels = try? OPCRelationships.parse(data: relsData),
            let thumbPath = rels.thumbnailPartPath {
             if let data = try zip.dataCaseInsensitive(for: thumbPath, sizeLimit: options.maxThumbnailBytes) {
@@ -157,7 +188,7 @@ public struct ThreeMFLoader {
         mesh = Self.finalizeMesh(mesh, hasPalette: !palette.isEmpty)
         let thumbnail = try zip.dataCaseInsensitive(for: "Metadata/plate_1.png", sizeLimit: options.maxThumbnailBytes) ?? packageThumbnail
         var stats: PlateStats? = nil
-        if let statsData = try zip.dataCaseInsensitive(for: "Metadata/plate_1.json") {
+        if let statsData = try zip.dataCaseInsensitive(for: "Metadata/plate_1.json", sizeLimit: options.maxMetadataBytes) {
             stats = BambuPlateStatsParser.parseStats(json: statsData, colors: nil, types: nil)
         }
         return BuildPlate(id: 1, name: "Plate 1", thumbnail: thumbnail, mesh: mesh, stats: stats, palette: palette)
@@ -194,7 +225,7 @@ public struct ThreeMFLoader {
             let thumbnail = try zip.dataCaseInsensitive(for: "Metadata/plate_\(assignment.id).png", sizeLimit: options.maxThumbnailBytes)
 
             var stats: PlateStats? = nil
-            if let statsData = try zip.dataCaseInsensitive(for: "Metadata/plate_\(assignment.id).json") {
+            if let statsData = try zip.dataCaseInsensitive(for: "Metadata/plate_\(assignment.id).json", sizeLimit: options.maxMetadataBytes) {
                 stats = BambuPlateStatsParser.parseStats(json: statsData, colors: projectColors, types: projectTypes)
             }
 

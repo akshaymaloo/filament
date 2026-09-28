@@ -260,6 +260,14 @@ put `0xFFFFFFFF` sentinels in every central-directory size/offset even when
 the file is small (OnShape's exporter does this). If a file still fails to
 parse, please attach it to an issue.
 
+### A very large model shows a generic icon in Finder
+
+Finder thumbnails are rendered with a budget of 3 million triangles and about
+20 seconds, so a huge model can't stall Finder. Above that, a 3MF with an
+embedded slicer thumbnail still shows that image; other files fall back to the
+default icon. The Space-bar preview opens models up to 20 million triangles,
+and the Filament app handles even larger ones.
+
 ## Contributing
 
 Issues and pull requests are welcome. Please keep `ThreeMFKit` dependency-free,

@@ -2,6 +2,23 @@ import Cocoa
 import Quartz
 import SceneKit
 import ThreeMFKit
+import os.lock
+
+/// A minimal thread-safe cancellation flag: `preparePreviewOfFile` parses
+/// off the main actor via `Task.detached`, whose body doesn't observe the
+/// parent task's cancellation directly, so `withTaskCancellationHandler`
+/// flips this flag instead and the parser polls it via `shouldCancel`.
+final class CancellationFlag: @unchecked Sendable {
+    private let lock = OSAllocatedUnfairLock(initialState: false)
+
+    var isCancelled: Bool {
+        lock.withLock { $0 }
+    }
+
+    func cancel() {
+        lock.withLock { $0 = true }
+    }
+}
 
 final class PreviewViewController: NSViewController, QLPreviewingController {
     private let scnView = ModelSCNView()
@@ -129,7 +146,21 @@ final class PreviewViewController: NSViewController, QLPreviewingController {
     }
 
     func preparePreviewOfFile(at url: URL) async throws {
-        let document = try ModelLoader().load(url: url)
+        // Previews may involve very large meshes; users opted in by opening
+        // Quick Look on this specific file, so the cap is generous (not
+        // unlimited, to still bound worst-case memory/time) rather than the
+        // stricter budget used for the ambient thumbnail extension.
+        let flag = CancellationFlag()
+        let document = try await withTaskCancellationHandler {
+            try await Task.detached(priority: .userInitiated) {
+                var options = ThreeMFLoader.Options.default
+                options.maxTriangles = 20_000_000
+                options.shouldCancel = { flag.isCancelled }
+                return try ModelLoader(options: options).load(url: url)
+            }.value
+        } onCancel: {
+            flag.cancel()
+        }
 
         await MainActor.run {
             self.document = document

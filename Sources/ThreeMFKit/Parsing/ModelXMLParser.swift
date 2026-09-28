@@ -12,6 +12,11 @@ enum ObjectDefinition {
     /// `p:path` value pointing at an external model part that owns the
     /// referenced object; `nil` means the component lives in the same part.
     case components([(objectId: Int, transform: Matrix4, path: String?)])
+    /// The object's `type` attribute is `support` (auto-generated print
+    /// supports) or `other` (not meant to be printed/rendered). Per the 3MF
+    /// core spec these must be excluded from the rendered mesh, triangle
+    /// count, and dimensions; `model`/`solidsupport`/`surface` are kept.
+    case excluded
 }
 
 /// A parsed `<item>` from `<build>`.
@@ -37,9 +42,20 @@ final class ModelXMLParser {
     private(set) var buildItems: [BuildItem] = []
 
     private let parseMesh: Bool
+    /// Triangle budget across every object in this part (i.e. this one
+    /// `.model` file); `nil` means unlimited. The loader additionally checks
+    /// the total across every resolved build item (which can multiply a
+    /// single part's triangles via repeated component references).
+    private let maxTriangles: Int?
+    private let shouldCancel: (() -> Bool)?
+    private var totalTriangleCount = 0
+    /// Counts elements processed so `shouldCancel` is polled cheaply (every
+    /// 65536 elements) rather than on every tiny `<vertex>`/`<triangle>`.
+    private var elementPollCounter = 0
 
     // Parsing state.
     private var currentObjectId: Int?
+    private var currentObjectType: String?
     private var currentVertices: [SIMD3<Float>] = []
     private var currentIndices: [UInt32] = []
     private var currentPaintStates: [Int] = []
@@ -48,23 +64,25 @@ final class ModelXMLParser {
     private var inTriangles = false
     private var inComponents = false
 
-    init(parseMesh: Bool) {
+    init(parseMesh: Bool, maxTriangles: Int? = nil, shouldCancel: (() -> Bool)? = nil) {
         self.parseMesh = parseMesh
+        self.maxTriangles = maxTriangles
+        self.shouldCancel = shouldCancel
     }
 
-    static func parse(data: Data, parseMesh: Bool) throws -> ModelXMLParser {
-        let delegate = ModelXMLParser(parseMesh: parseMesh)
-        data.withUnsafeBytes { (raw: UnsafeRawBufferPointer) in
+    static func parse(data: Data, parseMesh: Bool, maxTriangles: Int? = nil, shouldCancel: (() -> Bool)? = nil) throws -> ModelXMLParser {
+        let delegate = ModelXMLParser(parseMesh: parseMesh, maxTriangles: maxTriangles, shouldCancel: shouldCancel)
+        try data.withUnsafeBytes { (raw: UnsafeRawBufferPointer) in
             guard let rawBase = raw.baseAddress, raw.count > 0 else { return }
             let bytes = rawBase.assumingMemoryBound(to: UInt8.self)
-            delegate.scan(bytes: bytes, count: raw.count)
+            try delegate.scan(bytes: bytes, count: raw.count)
         }
         return delegate
     }
 
     // MARK: - Scanner
 
-    private func scan(bytes: UnsafePointer<UInt8>, count n: Int) {
+    private func scan(bytes: UnsafePointer<UInt8>, count n: Int) throws {
         let lt = UInt8(ascii: "<")
         let gt = UInt8(ascii: ">")
         let slash = UInt8(ascii: "/")
@@ -119,6 +137,14 @@ final class ModelXMLParser {
             let nameEnd = i
             let kind = elementKind(bytes: bytes, start: nameStart, end: nameEnd)
 
+            // Poll cancellation cheaply: checking on every tiny <vertex>/
+            // <triangle> element would itself become a measurable cost on
+            // multi-million-triangle meshes.
+            elementPollCounter += 1
+            if elementPollCounter & 0xFFFF == 0, let shouldCancel, shouldCancel() {
+                throw ThreeMFError.cancelled
+            }
+
             handleStart(kind)
 
             // Consume attributes, detecting a self-closing "/>".
@@ -155,7 +181,7 @@ final class ModelXMLParser {
                                 valueStart: avStart, valueEnd: avEnd)
             }
 
-            finishStart(kind)
+            try finishStart(kind)
             if selfClosing {
                 handleEnd(bytes: bytes, start: nameStart, end: nameEnd)
             }
@@ -171,6 +197,7 @@ final class ModelXMLParser {
 
     // Per-element attribute accumulators, reset in `handleStart`.
     private var attrObjectId: Int?
+    private var attrType: String?
     private var attrX: Float = 0, attrY: Float = 0, attrZ: Float = 0
     private var attrV1: UInt32 = 0, attrV2: UInt32 = 0, attrV3: UInt32 = 0
     private var attrPaint: Int = 0
@@ -202,6 +229,7 @@ final class ModelXMLParser {
             attrUnit = nil
         case .object:
             attrObjectId = nil
+            attrType = nil
             currentVertices = []
             currentIndices = []
             currentPaintStates = []
@@ -236,13 +264,15 @@ final class ModelXMLParser {
         case .object:
             if nlen == 2 && eq(bytes, nameStart, "id") {
                 attrObjectId = parseInt(bytes, valueStart, valueEnd)
+            } else if nlen == 4 && eq(bytes, nameStart, "type") {
+                attrType = string(bytes, valueStart, valueEnd)
             }
         case .vertex:
             guard parseMesh, nlen == 1 else { return }
             switch bytes[nameStart] {
-            case UInt8(ascii: "x"): attrX = Float(parseDouble(bytes, valueStart, valueEnd))
-            case UInt8(ascii: "y"): attrY = Float(parseDouble(bytes, valueStart, valueEnd))
-            case UInt8(ascii: "z"): attrZ = Float(parseDouble(bytes, valueStart, valueEnd))
+            case UInt8(ascii: "x"): attrX = Self.finiteFloat(parseDouble(bytes, valueStart, valueEnd))
+            case UInt8(ascii: "y"): attrY = Self.finiteFloat(parseDouble(bytes, valueStart, valueEnd))
+            case UInt8(ascii: "z"): attrZ = Self.finiteFloat(parseDouble(bytes, valueStart, valueEnd))
             default: break
             }
         case .triangle:
@@ -276,12 +306,13 @@ final class ModelXMLParser {
         }
     }
 
-    private func finishStart(_ kind: ElementKind) {
+    private func finishStart(_ kind: ElementKind) throws {
         switch kind {
         case .model:
             if let u = attrUnit, let parsed = LengthUnit(rawValue: u) { unit = parsed }
         case .object:
             currentObjectId = attrObjectId
+            currentObjectType = attrType
         case .vertex:
             if parseMesh && inVertices { currentVertices.append(SIMD3(attrX, attrY, attrZ)) }
         case .triangle:
@@ -290,6 +321,10 @@ final class ModelXMLParser {
                 currentIndices.append(attrV2)
                 currentIndices.append(attrV3)
                 currentPaintStates.append(attrPaint)
+                totalTriangleCount += 1
+                if let maxTriangles, totalTriangleCount > maxTriangles {
+                    throw ThreeMFError.meshTooLarge(triangles: totalTriangleCount, limit: maxTriangles)
+                }
             }
         case .component:
             if inComponents, let id = attrObjectId {
@@ -313,15 +348,52 @@ final class ModelXMLParser {
         case 10 where eq(bytes, s, "components"): inComponents = false
         case 6 where eq(bytes, s, "object"):
             guard let id = currentObjectId else { return }
-            if !currentComponents.isEmpty {
+            // Per the 3MF core spec, "support" (auto-generated print
+            // supports) and "other" objects must not be rendered or counted;
+            // "model" (default)/"solidsupport"/"surface" are kept.
+            if currentObjectType == "support" || currentObjectType == "other" {
+                objects[id] = .excluded
+            } else if !currentComponents.isEmpty {
                 objects[id] = .components(currentComponents)
             } else {
-                objects[id] = .mesh(TriangleMesh(positions: currentVertices, indices: currentIndices), paintStates: currentPaintStates)
+                // Vertices precede triangles inside a well-formed <mesh>, but
+                // a malformed/adversarial file can still declare a triangle
+                // index >= vertices.count; that must never reach the
+                // renderer, so filter here (parallel with paint states).
+                let sanitized = Self.sanitizedTriangleData(vertexCount: currentVertices.count, indices: currentIndices, paintStates: currentPaintStates)
+                objects[id] = .mesh(TriangleMesh(positions: currentVertices, indices: sanitized.indices), paintStates: sanitized.paintStates)
             }
             currentObjectId = nil
+            currentObjectType = nil
         default:
             break
         }
+    }
+
+    /// Drops triangles whose v1/v2/v3 is out of range for `vertexCount`,
+    /// dropping the parallel `paintStates` entry too so counts stay aligned.
+    /// The common case (nothing to drop) is a fast full-array scan with no
+    /// allocation.
+    private static func sanitizedTriangleData(vertexCount: Int, indices: [UInt32], paintStates: [Int]) -> (indices: [UInt32], paintStates: [Int]) {
+        guard indices.contains(where: { Int($0) >= vertexCount }) else { return (indices, paintStates) }
+
+        var keptIndices: [UInt32] = []
+        keptIndices.reserveCapacity(indices.count)
+        var keptPaintStates: [Int] = []
+        keptPaintStates.reserveCapacity(paintStates.count)
+
+        var triangle = 0
+        var i = 0
+        while i + 2 < indices.count {
+            let i0 = indices[i], i1 = indices[i + 1], i2 = indices[i + 2]
+            if Int(i0) < vertexCount, Int(i1) < vertexCount, Int(i2) < vertexCount {
+                keptIndices.append(contentsOf: [i0, i1, i2])
+                if triangle < paintStates.count { keptPaintStates.append(paintStates[triangle]) }
+            }
+            i += 3
+            triangle += 1
+        }
+        return (keptIndices, keptPaintStates)
     }
 
     // MARK: - Byte helpers
@@ -353,8 +425,20 @@ final class ModelXMLParser {
         String(decoding: UnsafeBufferPointer(start: bytes + start, count: max(0, end - start)), as: UTF8.self)
     }
 
+    /// Narrows a (already-finite) `Double` to `Float`, clamping the rare case
+    /// where the `Double` is finite but exceeds `Float`'s range (the
+    /// Double->Float conversion itself doesn't trap, but can produce ±inf,
+    /// which must not poison the mesh's bounding box).
+    @inline(__always) private static func finiteFloat(_ value: Double) -> Float {
+        let narrowed = Float(value)
+        return narrowed.isFinite ? narrowed : 0
+    }
+
     /// Parses a base-10 integer from `bytes[start..<end]`, tolerating a leading
     /// sign and surrounding whitespace. Returns `nil` if no digits are present.
+    /// Overflow-safe: 3MF ids/vertex indices fit comfortably in `UInt32`, so a
+    /// pathological attribute (e.g. a 20-digit value) clamps to `Int.max`/
+    /// `Int.min` instead of trapping on `value * 10 + digit`.
     @inline(__always) private func parseInt(_ bytes: UnsafePointer<UInt8>, _ start: Int, _ end: Int) -> Int? {
         var i = start
         while i < end && isSpace(bytes[i]) { i += 1 }
@@ -365,14 +449,23 @@ final class ModelXMLParser {
         }
         var value = 0
         var sawDigit = false
+        var overflowed = false
         while i < end {
             let d = bytes[i]
             guard d >= UInt8(ascii: "0") && d <= UInt8(ascii: "9") else { break }
-            value = value * 10 + Int(d - UInt8(ascii: "0"))
             sawDigit = true
+            if !overflowed {
+                if value > (Int.max - 9) / 10 {
+                    overflowed = true
+                    value = Int.max
+                } else {
+                    value = value * 10 + Int(d - UInt8(ascii: "0"))
+                }
+            }
             i += 1
         }
-        return sawDigit ? sign * value : nil
+        guard sawDigit else { return nil }
+        return overflowed ? (sign > 0 ? Int.max : Int.min) : sign * value
     }
 
     /// Parses a floating-point value from `bytes[start..<end]` (sign, integer
@@ -410,13 +503,20 @@ final class ModelXMLParser {
             }
             var exp = 0
             while i < end, bytes[i] >= zero, bytes[i] <= nine {
-                exp = exp * 10 + Int(bytes[i] - zero)
+                // Clamp accumulation so a pathological exponent (e.g.
+                // "1e999999999") can't overflow `exp * 10 + digit`; `pow`
+                // already saturates to inf/0 well before 400 anyway.
+                if exp < 10_000 { exp = exp * 10 + Int(bytes[i] - zero) }
                 i += 1
             }
             if exp != 0 {
-                result *= pow(10.0, Double(expSign * exp))
+                result *= pow(10.0, Double(expSign * min(exp, 400)))
             }
         }
-        return sign * result
+        let final = sign * result
+        // A non-finite coordinate (from an extreme exponent, or otherwise)
+        // must not poison the mesh's bounding box; treat it as 0 rather than
+        // dropping the vertex (which would shift every later triangle index).
+        return final.isFinite ? final : 0
     }
 }

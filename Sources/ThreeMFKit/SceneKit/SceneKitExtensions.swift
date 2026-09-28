@@ -17,35 +17,19 @@ public extension TriangleMesh {
     /// Builds an `SCNGeometry` from this mesh's positions/indices with smooth
     /// per-vertex normals. Returns `nil` for an empty mesh.
     func makeGeometry() -> SCNGeometry? {
-        guard !isEmpty else { return nil }
+        // Every index handed to `SCNGeometryElement` must be in-range: an
+        // out-of-range index is otherwise silently accepted by SceneKit and
+        // can crash the Metal renderer reading past the vertex buffer.
+        let mesh = sanitizedForRendering()
+        guard !mesh.isEmpty else { return nil }
 
-        var normals = [SIMD3<Float>](repeating: .zero, count: positions.count)
-        var triangleIndex = 0
-        while triangleIndex + 2 < indices.count {
-            let i0 = Int(indices[triangleIndex])
-            let i1 = Int(indices[triangleIndex + 1])
-            let i2 = Int(indices[triangleIndex + 2])
-            triangleIndex += 3
-            guard i0 < positions.count, i1 < positions.count, i2 < positions.count else { continue }
-            let v0 = positions[i0], v1 = positions[i1], v2 = positions[i2]
-            let faceNormal = simd_cross(v1 - v0, v2 - v0)
-            normals[i0] += faceNormal
-            normals[i1] += faceNormal
-            normals[i2] += faceNormal
-        }
-        let smoothed = normals.map { n -> SIMD3<Float> in
-            let len = simd_length(n)
-            return len > 0 ? n / len : SIMD3<Float>(0, 0, 1)
-        }
+        let (positionSource, normalSource) = mesh.makeSmoothedSources()
 
-        let positionSource = SCNGeometrySource(vertices: positions.map { SCNVector3($0.x, $0.y, $0.z) })
-        let normalSource = SCNGeometrySource(normals: smoothed.map { SCNVector3($0.x, $0.y, $0.z) })
-
-        let indexData = indices.withUnsafeBufferPointer { Data(buffer: $0) }
+        let indexData = mesh.indices.withUnsafeBufferPointer { Data(buffer: $0) }
         let element = SCNGeometryElement(
             data: indexData,
             primitiveType: .triangles,
-            primitiveCount: triangleCount,
+            primitiveCount: mesh.triangleCount,
             bytesPerIndex: MemoryLayout<UInt32>.size
         )
 
@@ -60,35 +44,19 @@ public extension TriangleMesh {
     /// Returns an empty array if there is no (complete) per-triangle color
     /// data, or the mesh is empty.
     func makeColorGroupedGeometries() -> [(paletteIndex: UInt8, geometry: SCNGeometry)] {
-        guard !isEmpty, let colorIndices = triangleColorIndices, colorIndices.count == triangleCount else { return [] }
+        // See `makeGeometry()`: indices must be sanitized before being handed
+        // to `SCNGeometryElement`.
+        let mesh = sanitizedForRendering()
+        guard !mesh.isEmpty, let colorIndices = mesh.triangleColorIndices, colorIndices.count == mesh.triangleCount else { return [] }
 
-        var normals = [SIMD3<Float>](repeating: .zero, count: positions.count)
-        var triangleIndex = 0
-        while triangleIndex + 2 < indices.count {
-            let i0 = Int(indices[triangleIndex])
-            let i1 = Int(indices[triangleIndex + 1])
-            let i2 = Int(indices[triangleIndex + 2])
-            triangleIndex += 3
-            guard i0 < positions.count, i1 < positions.count, i2 < positions.count else { continue }
-            let v0 = positions[i0], v1 = positions[i1], v2 = positions[i2]
-            let faceNormal = simd_cross(v1 - v0, v2 - v0)
-            normals[i0] += faceNormal
-            normals[i1] += faceNormal
-            normals[i2] += faceNormal
-        }
-        let smoothed = normals.map { n -> SIMD3<Float> in
-            let len = simd_length(n)
-            return len > 0 ? n / len : SIMD3<Float>(0, 0, 1)
-        }
-        let positionSource = SCNGeometrySource(vertices: positions.map { SCNVector3($0.x, $0.y, $0.z) })
-        let normalSource = SCNGeometrySource(normals: smoothed.map { SCNVector3($0.x, $0.y, $0.z) })
+        let (positionSource, normalSource) = mesh.makeSmoothedSources()
 
         // Group triangles by palette index, preserving original triangle order within each group.
         var groupedIndices: [UInt8: [UInt32]] = [:]
-        for triangle in 0..<triangleCount {
+        for triangle in 0..<mesh.triangleCount {
             let paletteIndex = colorIndices[triangle]
             let base = triangle * 3
-            groupedIndices[paletteIndex, default: []].append(contentsOf: [indices[base], indices[base + 1], indices[base + 2]])
+            groupedIndices[paletteIndex, default: []].append(contentsOf: [mesh.indices[base], mesh.indices[base + 1], mesh.indices[base + 2]])
         }
 
         return groupedIndices.sorted { $0.key < $1.key }.compactMap { paletteIndex, triangleIndices -> (paletteIndex: UInt8, geometry: SCNGeometry)? in
@@ -103,6 +71,33 @@ public extension TriangleMesh {
             let geometry = SCNGeometry(sources: [positionSource, normalSource], elements: [element])
             return (paletteIndex, geometry)
         }
+    }
+
+    /// Computes smooth per-vertex normals (face-normal-weighted average) and
+    /// wraps both positions and normals as `SCNGeometrySource`s. Assumes
+    /// `self` has already been sanitized (every index `< positions.count`).
+    private func makeSmoothedSources() -> (position: SCNGeometrySource, normal: SCNGeometrySource) {
+        var normals = [SIMD3<Float>](repeating: .zero, count: positions.count)
+        var triangleIndex = 0
+        while triangleIndex + 2 < indices.count {
+            let i0 = Int(indices[triangleIndex])
+            let i1 = Int(indices[triangleIndex + 1])
+            let i2 = Int(indices[triangleIndex + 2])
+            triangleIndex += 3
+            let v0 = positions[i0], v1 = positions[i1], v2 = positions[i2]
+            let faceNormal = simd_cross(v1 - v0, v2 - v0)
+            normals[i0] += faceNormal
+            normals[i1] += faceNormal
+            normals[i2] += faceNormal
+        }
+        let smoothed = normals.map { n -> SIMD3<Float> in
+            let len = simd_length(n)
+            return len > 0 ? n / len : SIMD3<Float>(0, 0, 1)
+        }
+
+        let positionSource = SCNGeometrySource(vertices: positions.map { SCNVector3($0.x, $0.y, $0.z) })
+        let normalSource = SCNGeometrySource(normals: smoothed.map { SCNVector3($0.x, $0.y, $0.z) })
+        return (positionSource, normalSource)
     }
 }
 

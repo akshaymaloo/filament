@@ -5,6 +5,17 @@ import SceneKit
 import Metal
 
 final class ThumbnailProvider: QLThumbnailProvider {
+    /// Wall-clock budget for the SceneKit fallback path (mesh parse +
+    /// render); Quick Look kills extensions that run far longer than this,
+    /// so bail out cooperatively well before that happens.
+    private static let renderDeadline: TimeInterval = 20
+    /// Above this, rendering (and even building the SceneKit geometry) gets
+    /// noticeably slower; QL thumbnails don't need every triangle.
+    private static let maxThumbnailTriangles = 3_000_000
+    /// Meshes above this size get a cheaper antialiasing mode to keep the
+    /// snapshot render within the time budget.
+    private static let highTriangleAntialiasingThreshold = 1_000_000
+
     override func provideThumbnail(
         for request: QLFileThumbnailRequest,
         _ handler: @escaping (QLThumbnailReply?, Error?) -> Void
@@ -16,12 +27,14 @@ final class ThumbnailProvider: QLThumbnailProvider {
         }
 
         // Fallback: parse the mesh and render an offscreen SceneKit snapshot.
-        if let reply = renderedSceneReply(for: request) {
+        do {
+            let reply = try renderedSceneReply(for: request)
             handler(reply, nil)
-            return
+        } catch {
+            // Report the failure (rather than silent nil/nil) so Quick Look
+            // falls back to the default file icon instead of retrying forever.
+            handler(nil, error)
         }
-
-        handler(nil, nil)
     }
 
     private func fastPathReply(for request: QLFileThumbnailRequest) -> QLThumbnailReply? {
@@ -39,13 +52,16 @@ final class ThumbnailProvider: QLThumbnailProvider {
         }
     }
 
-    private func renderedSceneReply(for request: QLFileThumbnailRequest) -> QLThumbnailReply? {
+    private func renderedSceneReply(for request: QLFileThumbnailRequest) throws -> QLThumbnailReply? {
         guard let device = MTLCreateSystemDefaultDevice() else { return nil }
-        guard let document = try? ModelLoader().load(url: request.fileURL),
-              let plate = document.plates.first
-        else {
-            return nil
-        }
+
+        let deadline = Date().addingTimeInterval(Self.renderDeadline)
+        var options = ThreeMFLoader.Options.default
+        options.maxTriangles = Self.maxThumbnailTriangles
+        options.shouldCancel = { Date() > deadline }
+
+        let document = try ModelLoader(options: options).load(url: request.fileURL)
+        guard let plate = document.plates.first else { return nil }
 
         let scene = plate.makeScene()
         let renderer = SCNRenderer(device: device, options: nil)
@@ -58,7 +74,9 @@ final class ThumbnailProvider: QLThumbnailProvider {
         )
         guard pixelSize.width > 0, pixelSize.height > 0 else { return nil }
 
-        let cgImage = renderer.snapshot(atTime: 0, with: pixelSize, antialiasingMode: .multisampling4X).cgImage(
+        let antialiasingMode: SCNAntialiasingMode =
+            plate.mesh.triangleCount > Self.highTriangleAntialiasingThreshold ? .none : .multisampling4X
+        let cgImage = renderer.snapshot(atTime: 0, with: pixelSize, antialiasingMode: antialiasingMode).cgImage(
             forProposedRect: nil,
             context: nil,
             hints: nil

@@ -75,11 +75,11 @@ public struct ModelLoader {
     private func parseMesh(data: Data, format: ModelFormat) throws -> TriangleMesh {
         switch format {
         case .stl:
-            return try STLParser.parse(data: data)
+            return try STLParser.parse(data: data, maxTriangles: options.maxTriangles, shouldCancel: options.shouldCancel)
         case .obj:
-            return try OBJParser.parse(data: data)
+            return try OBJParser.parse(data: data, maxTriangles: options.maxTriangles, shouldCancel: options.shouldCancel)
         case .ply:
-            return try PLYParser.parse(data: data)
+            return try PLYParser.parse(data: data, maxTriangles: options.maxTriangles, shouldCancel: options.shouldCancel)
         case .threeMF:
             // Unreachable: callers only route here for the mesh-only formats.
             return TriangleMesh()
@@ -88,9 +88,9 @@ public struct ModelLoader {
 
     /// Best-effort content sniffing when the file extension is missing or
     /// unrecognized: 3MF packages are ZIP archives, PLY files declare
-    /// themselves with a "ply" magic line, binary STL files have an exact
-    /// `84 + 50*count` byte layout (or start with "solid" for ascii), and
-    /// OBJ files are plain text containing `v `/`f ` directives.
+    /// themselves with a "ply" magic line, STL files are sniffed with
+    /// `STLParser.looksLikeSTL` (binary or ascii), and OBJ files are plain
+    /// text containing `v `/`f ` directives.
     private func sniffFormat(data: Data) throws -> ModelFormat {
         if data.count >= 4 {
             let signature = data.prefix(4)
@@ -101,18 +101,9 @@ public struct ModelLoader {
         if let prefix = String(data: data.prefix(3), encoding: .utf8), prefix.lowercased() == "ply" {
             return .ply
         }
-        if data.count >= 84 {
-            let reader = ByteReader(data)
-            if let count = try? reader.u32(80), 84 + Int(count) * 50 == data.count {
-                return .stl
-            }
-        }
-        if let prefix = String(data: data.prefix(512), encoding: .utf8) {
-            let trimmed = prefix.trimmingCharacters(in: .whitespacesAndNewlines)
-            if trimmed.lowercased().hasPrefix("solid") {
-                return .stl
-            }
-        }
+        // OBJ before STL: the lenient binary-STL heuristics (e.g. body size a
+        // multiple of 50) could otherwise claim an extensionless OBJ text file.
+        // ASCII STL never has lines starting with "v " or "f ".
         if let text = String(data: data, encoding: .utf8) {
             let hasVertexLine = text.split(separator: "\n").contains { line in
                 let trimmed = line.trimmingCharacters(in: .whitespaces)
@@ -121,6 +112,9 @@ public struct ModelLoader {
             if hasVertexLine {
                 return .obj
             }
+        }
+        if STLParser.looksLikeSTL(data: data) {
+            return .stl
         }
         throw ThreeMFError.malformedMesh("Unable to determine model format from file content.")
     }

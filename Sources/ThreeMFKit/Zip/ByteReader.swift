@@ -10,6 +10,14 @@ struct ByteReader {
         self.base = data.startIndex
     }
 
+    /// Views `data` starting at `offset` bytes past its `startIndex`, without
+    /// copying. All reads remain bounds-checked against `data.endIndex`; only
+    /// `slice(_:length:)` actually copies bytes (the returned entry payload).
+    init(_ data: Data, offset: Int) {
+        self.data = data
+        self.base = data.startIndex + offset
+    }
+
     func u8(_ offset: Int) throws -> UInt8 {
         let i = base + offset
         guard i >= data.startIndex, i < data.endIndex else {

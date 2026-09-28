@@ -39,8 +39,8 @@ public enum ThreeMFFixtureFactory {
         (1, 6, 2), (1, 5, 6)
     ]
 
-    private static func meshObjectXML(objectId: Int, vertices: [(Float, Float, Float)], triangles: [(Int, Int, Int)]) -> String {
-        var s = "<object id=\"\(objectId)\" type=\"model\">\n  <mesh>\n    <vertices>\n"
+    private static func meshObjectXML(objectId: Int, vertices: [(Float, Float, Float)], triangles: [(Int, Int, Int)], type: String = "model") -> String {
+        var s = "<object id=\"\(objectId)\" type=\"\(type)\">\n  <mesh>\n    <vertices>\n"
         for v in vertices {
             s += "      <vertex x=\"\(v.0)\" y=\"\(v.1)\" z=\"\(v.2)\"/>\n"
         }
@@ -66,6 +66,37 @@ public enum ThreeMFFixtureFactory {
         </model>
         """
         return archive(deflate: deflate, forceZip64ExtraFields: forceZip64ExtraFields, entries: [
+            ("[Content_Types].xml", Data(contentTypesXML.utf8)),
+            ("_rels/.rels", Data(relsXML(includeThumbnail: false).utf8)),
+            ("3D/3dmodel.model", Data(modelXML.utf8))
+        ])
+    }
+
+    /// A "billion laughs"-style component DAG: object 1 is the leaf, and each
+    /// level above it references the level below `fanOut` times, so a tiny
+    /// package describes `fanOut^depth` leaf instances. `leafType` lets the
+    /// leaf be an excluded (`support`) object to exercise the visit cap alone.
+    public static func componentFanOut(depth: Int, fanOut: Int, leafType: String = "model") -> Data {
+        var objects = meshObjectXML(objectId: 1, vertices: cubeVertices, triangles: cubeTriangles, type: leafType)
+        for level in 1...depth {
+            objects += "<object id=\"\(level + 1)\" type=\"model\">\n  <components>\n"
+            for _ in 0..<fanOut {
+                objects += "    <component objectid=\"\(level)\"/>\n"
+            }
+            objects += "  </components>\n</object>\n"
+        }
+        let modelXML = """
+        <?xml version="1.0" encoding="UTF-8"?>
+        <model unit="millimeter" xmlns="http://schemas.microsoft.com/3dmanufacturing/core/2015/02">
+          <resources>
+        \(objects)
+          </resources>
+          <build>
+            <item objectid="\(depth + 1)"/>
+          </build>
+        </model>
+        """
+        return archive(deflate: true, entries: [
             ("[Content_Types].xml", Data(contentTypesXML.utf8)),
             ("_rels/.rels", Data(relsXML(includeThumbnail: false).utf8)),
             ("3D/3dmodel.model", Data(modelXML.utf8))
@@ -262,6 +293,205 @@ public enum ThreeMFFixtureFactory {
         ])
     }
 
+    /// A cube whose last triangle references vertex index 999 (far beyond
+    /// the 8 declared vertices); the other 11 triangles are valid. Exercises
+    /// `ModelXMLParser`'s out-of-range triangle filtering (fix 1).
+    public static func triangleOutOfRangeCube() -> Data {
+        var triangles = cubeTriangles
+        triangles[triangles.count - 1] = (0, 1, 999)
+        let modelXML = """
+        <?xml version="1.0" encoding="UTF-8"?>
+        <model unit="millimeter" xmlns="http://schemas.microsoft.com/3dmanufacturing/core/2015/02">
+          <resources>
+        \(meshObjectXML(objectId: 1, vertices: cubeVertices, triangles: triangles))
+          </resources>
+          <build>
+            <item objectid="1"/>
+          </build>
+        </model>
+        """
+        return archive(deflate: true, entries: [
+            ("[Content_Types].xml", Data(contentTypesXML.utf8)),
+            ("_rels/.rels", Data(relsXML(includeThumbnail: false).utf8)),
+            ("3D/3dmodel.model", Data(modelXML.utf8))
+        ])
+    }
+
+    /// A cube whose last triangle's `v3` attribute is a 20-digit decimal
+    /// string that overflows `Int` if parsed naively. Exercises
+    /// `ModelXMLParser.parseInt`'s overflow-safe clamping (fix 7); the
+    /// resulting (clamped-then-truncated) index is out of range and should
+    /// be dropped by the same filtering as `triangleOutOfRangeCube`.
+    public static func hugeDigitTriangleIndexCube() -> Data {
+        var s = "<object id=\"1\" type=\"model\">\n  <mesh>\n    <vertices>\n"
+        for v in cubeVertices {
+            s += "      <vertex x=\"\(v.0)\" y=\"\(v.1)\" z=\"\(v.2)\"/>\n"
+        }
+        s += "    </vertices>\n    <triangles>\n"
+        for (index, t) in cubeTriangles.enumerated() {
+            if index == cubeTriangles.count - 1 {
+                s += "      <triangle v1=\"\(t.0)\" v2=\"\(t.1)\" v3=\"99999999999999999999\"/>\n"
+            } else {
+                s += "      <triangle v1=\"\(t.0)\" v2=\"\(t.1)\" v3=\"\(t.2)\"/>\n"
+            }
+        }
+        s += "    </triangles>\n  </mesh>\n</object>\n"
+
+        let modelXML = """
+        <?xml version="1.0" encoding="UTF-8"?>
+        <model unit="millimeter" xmlns="http://schemas.microsoft.com/3dmanufacturing/core/2015/02">
+          <resources>
+        \(s)
+          </resources>
+          <build>
+            <item objectid="1"/>
+          </build>
+        </model>
+        """
+        return archive(deflate: true, entries: [
+            ("[Content_Types].xml", Data(contentTypesXML.utf8)),
+            ("_rels/.rels", Data(relsXML(includeThumbnail: false).utf8)),
+            ("3D/3dmodel.model", Data(modelXML.utf8))
+        ])
+    }
+
+    /// A cube whose second vertex's `x` attribute has a huge exponent
+    /// (`1e999999999`), which would overflow `Double` exponent accumulation
+    /// if parsed naively. Exercises `ModelXMLParser.parseDouble`'s clamped
+    /// exponent accumulation and the non-finite-coordinate guard (fix 7).
+    public static func hugeExponentVertexCube() -> Data {
+        var s = "<object id=\"1\" type=\"model\">\n  <mesh>\n    <vertices>\n"
+        for (index, v) in cubeVertices.enumerated() {
+            if index == 1 {
+                s += "      <vertex x=\"1e999999999\" y=\"\(v.1)\" z=\"\(v.2)\"/>\n"
+            } else {
+                s += "      <vertex x=\"\(v.0)\" y=\"\(v.1)\" z=\"\(v.2)\"/>\n"
+            }
+        }
+        s += "    </vertices>\n    <triangles>\n"
+        for t in cubeTriangles {
+            s += "      <triangle v1=\"\(t.0)\" v2=\"\(t.1)\" v3=\"\(t.2)\"/>\n"
+        }
+        s += "    </triangles>\n  </mesh>\n</object>\n"
+
+        let modelXML = """
+        <?xml version="1.0" encoding="UTF-8"?>
+        <model unit="millimeter" xmlns="http://schemas.microsoft.com/3dmanufacturing/core/2015/02">
+          <resources>
+        \(s)
+          </resources>
+          <build>
+            <item objectid="1"/>
+          </build>
+        </model>
+        """
+        return archive(deflate: true, entries: [
+            ("[Content_Types].xml", Data(contentTypesXML.utf8)),
+            ("_rels/.rels", Data(relsXML(includeThumbnail: false).utf8)),
+            ("3D/3dmodel.model", Data(modelXML.utf8))
+        ])
+    }
+
+    /// Four objects covering every `<object type=...>` value in the 3MF core
+    /// spec: `model` (default, kept), `support`/`other` (excluded from the
+    /// rendered mesh/triangle count/dimensions), and `solidsupport` (kept).
+    /// Each build item is a plain 12-triangle cube translated along X so
+    /// their bounding boxes don't overlap.
+    public static func objectTypesFixture() -> Data {
+        func cube(offsetX: Float) -> [(Float, Float, Float)] {
+            cubeVertices.map { ($0.0 + offsetX, $0.1, $0.2) }
+        }
+        let modelXML = """
+        <?xml version="1.0" encoding="UTF-8"?>
+        <model unit="millimeter" xmlns="http://schemas.microsoft.com/3dmanufacturing/core/2015/02">
+          <resources>
+        \(meshObjectXML(objectId: 1, vertices: cube(offsetX: 0), triangles: cubeTriangles, type: "model"))
+        \(meshObjectXML(objectId: 2, vertices: cube(offsetX: 100), triangles: cubeTriangles, type: "support"))
+        \(meshObjectXML(objectId: 3, vertices: cube(offsetX: 200), triangles: cubeTriangles, type: "other"))
+        \(meshObjectXML(objectId: 4, vertices: cube(offsetX: 300), triangles: cubeTriangles, type: "solidsupport"))
+          </resources>
+          <build>
+            <item objectid="1"/>
+            <item objectid="2"/>
+            <item objectid="3"/>
+            <item objectid="4"/>
+          </build>
+        </model>
+        """
+        return archive(deflate: true, entries: [
+            ("[Content_Types].xml", Data(contentTypesXML.utf8)),
+            ("_rels/.rels", Data(relsXML(includeThumbnail: false).utf8)),
+            ("3D/3dmodel.model", Data(modelXML.utf8))
+        ])
+    }
+
+    /// A normal single-cube 3MF package, except the EOCD's trailing archive
+    /// comment itself embeds a fake `PK\x05\x06` (EOCD) signature followed by
+    /// bytes that don't form a self-consistent record. Exercises
+    /// `ZipArchive`'s backward EOCD scan disambiguation (fix 2): it must find
+    /// the *real* EOCD (whose declared comment length reaches exactly the end
+    /// of the file) rather than stopping at the fake, inner signature.
+    public static func minimalCubeWithFakeEOCDInComment() -> Data {
+        let modelXML = """
+        <?xml version="1.0" encoding="UTF-8"?>
+        <model unit="millimeter" xmlns="http://schemas.microsoft.com/3dmanufacturing/core/2015/02">
+          <resources>
+        \(meshObjectXML(objectId: 1, vertices: cubeVertices, triangles: cubeTriangles))
+          </resources>
+          <build>
+            <item objectid="1"/>
+          </build>
+        </model>
+        """
+        var writer = ZipWriter()
+        writer.addEntry(path: "[Content_Types].xml", data: Data(contentTypesXML.utf8), method: .store)
+        writer.addEntry(path: "_rels/.rels", data: Data(relsXML(includeThumbnail: false).utf8), method: .store)
+        writer.addEntry(path: "3D/3dmodel.model", data: Data(modelXML.utf8), method: .store)
+
+        // A fake signature followed by 16 arbitrary bytes (disk number,
+        // central dir counts/size/offset) and a 2-byte "comment length" that,
+        // interpreted from the following junk bytes, won't add up to the
+        // true end of the file — so it fails the self-consistency check and
+        // the real EOCD (whose own comment length is correct) is preferred.
+        var comment = Data("Sliced with Fixture Slicer v1.0 — ".utf8)
+        comment.append(contentsOf: [0x50, 0x4B, 0x05, 0x06]) // fake EOCD signature
+        comment.append(contentsOf: [UInt8](repeating: 0xAB, count: 16)) // fake fixed fields
+        comment.append(contentsOf: [0xFF, 0xFF]) // fake "comment length" (65535, never matches)
+        comment.append(Data(" — end of comment".utf8))
+
+        return writer.finalize(trailingComment: comment)
+    }
+
+    /// A 3MF package whose model-part central-directory entry declares an
+    /// implausible uncompressed size (default 1 GiB) far larger than its
+    /// real (tiny, DEFLATE-compressed) payload. Exercises the DEFLATE
+    /// ratio-bomb guard (fix 6): the declared ratio vastly exceeds DEFLATE's
+    /// ~1032:1 theoretical maximum, so `ZipArchive` must reject it before
+    /// ever allocating an output buffer sized to the lie.
+    public static func lyingHeaderEntry(claimedUncompressedBytes: Int = 1024 * 1024 * 1024) -> Data {
+        let modelXML = """
+        <?xml version="1.0" encoding="UTF-8"?>
+        <model unit="millimeter" xmlns="http://schemas.microsoft.com/3dmanufacturing/core/2015/02">
+          <resources>
+        \(meshObjectXML(objectId: 1, vertices: cubeVertices, triangles: cubeTriangles))
+          </resources>
+          <build>
+            <item objectid="1"/>
+          </build>
+        </model>
+        """
+        var writer = ZipWriter()
+        writer.addEntry(path: "[Content_Types].xml", data: Data(contentTypesXML.utf8), method: .store)
+        writer.addEntry(path: "_rels/.rels", data: Data(relsXML(includeThumbnail: false).utf8), method: .store)
+        writer.addEntry(
+            path: "3D/3dmodel.model",
+            data: Data(modelXML.utf8),
+            method: .deflate,
+            declaredUncompressedSizeOverride: claimedUncompressedBytes
+        )
+        return writer.finalize()
+    }
+
     private static func archive(deflate: Bool, forceZip64ExtraFields: Bool = false, entries: [(String, Data)]) -> Data {
         var writer = ZipWriter()
         for (path, data) in entries {
@@ -295,6 +525,36 @@ public enum ThreeMFFixtureFactory {
             }
             data.append(contentsOf: [0, 0]) // attribute byte count
         }
+        return data
+    }
+
+    /// Binary STL with 16 trailing padding bytes appended after the last
+    /// triangle record — the exact `84 + 50*count` formula no longer matches
+    /// `data.count`, exercising `STLParser`'s tolerant declared-count tier.
+    public static func stlBinaryCubeWithTrailingBytes() -> Data {
+        var data = stlBinaryCube()
+        data.append(contentsOf: [UInt8](repeating: 0xEE, count: 16))
+        return data
+    }
+
+    /// Binary STL whose 80-byte header starts with the literal ASCII bytes
+    /// "solid " (colliding with the ASCII-STL sniff), but whose overall size
+    /// still exactly matches `84 + 50*count`, so it must still be classified
+    /// as binary (tier 1, exact-size match wins over any prefix heuristic).
+    public static func stlBinaryCubeWithSolidPrefix() -> Data {
+        var data = stlBinaryCube()
+        let prefix = Array("solid ".utf8)
+        data.replaceSubrange(0..<prefix.count, with: prefix)
+        return data
+    }
+
+    /// Binary STL whose declared header triangle count is zeroed out (as if
+    /// a buggy writer never filled it in), but whose body size is still a
+    /// clean, positive multiple of 50 bytes — exercises `STLParser`'s
+    /// body-size fallback tier (count == 0 but the record layout is intact).
+    public static func stlBinaryCubeWithZeroDeclaredCount() -> Data {
+        var data = stlBinaryCube()
+        data.replaceSubrange(80..<84, with: [UInt8](repeating: 0, count: 4))
         return data
     }
 
@@ -348,6 +608,25 @@ public enum ThreeMFFixtureFactory {
         }
         for (i0, i1, i2) in cubeTriangles {
             s += "3 \(i0) \(i1) \(i2)\n"
+        }
+        return Data(s.utf8)
+    }
+
+    /// ASCII PLY whose first face's last index is `5000000000` (5e9), which
+    /// overflows `UInt32.max` (~4.29e9) — `UInt32(indexValue)` traps on this
+    /// unless guarded. Exercises `PLYParser`'s index-range/finiteness check
+    /// (fix 7).
+    public static func plyASCIICubeWithHugeFaceIndex() -> Data {
+        var s = plyHeader(format: "ascii")
+        for v in cubeVertices {
+            s += "\(v.0) \(v.1) \(v.2)\n"
+        }
+        for (index, t) in cubeTriangles.enumerated() {
+            if index == 0 {
+                s += "3 \(t.0) \(t.1) 5000000000\n"
+            } else {
+                s += "3 \(t.0) \(t.1) \(t.2)\n"
+            }
         }
         return Data(s.utf8)
     }

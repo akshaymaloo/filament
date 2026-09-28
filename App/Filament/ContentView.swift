@@ -27,7 +27,7 @@ struct ContentView: View {
 
     private func handleDrop(providers: [NSItemProvider]) -> Bool {
         guard let provider = providers.first else { return false }
-        provider.loadObject(ofClass: URL.self) { url, _ in
+        _ = provider.loadObject(ofClass: URL.self) { url, _ in
             guard let url else { return }
             DispatchQueue.main.async {
                 guard ModelFormat(fileExtension: url.pathExtension) != nil else {

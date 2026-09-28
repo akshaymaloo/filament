@@ -16,6 +16,12 @@ struct ZipWriter {
         let compressed: Data
         let crc32: UInt32
         let localHeaderOffset: Int
+        /// When non-nil, written into the central directory's uncompressed
+        /// size field in place of `uncompressed.count` — a test-only hook
+        /// for building a "lying header" fixture (declared size wildly
+        /// larger than the real payload) without allocating gigabytes of
+        /// real data.
+        let declaredUncompressedSizeOverride: Int?
     }
 
     private var entries: [PendingEntry] = []
@@ -25,7 +31,7 @@ struct ZipWriter {
     private static let centralHeaderSignature: UInt32 = 0x0201_4b50
     private static let eocdSignature: UInt32 = 0x0605_4b50
 
-    mutating func addEntry(path: String, data: Data, method: Method) {
+    mutating func addEntry(path: String, data: Data, method: Method, declaredUncompressedSizeOverride: Int? = nil) {
         let crc = CRC32.checksum(data)
         let compressed: Data
         switch method {
@@ -53,7 +59,7 @@ struct ZipWriter {
         local.append(compressed)
 
         body.append(local)
-        entries.append(PendingEntry(path: path, method: method, uncompressed: data, compressed: compressed, crc32: crc, localHeaderOffset: offset))
+        entries.append(PendingEntry(path: path, method: method, uncompressed: data, compressed: compressed, crc32: crc, localHeaderOffset: offset, declaredUncompressedSizeOverride: declaredUncompressedSizeOverride))
     }
 
     /// Serializes the archive: local entries followed by the central directory and EOCD.
@@ -62,7 +68,12 @@ struct ZipWriter {
     /// writes 0xFFFFFFFF sentinels for size/offset and stores the real 64-bit
     /// values in a Zip64 extra field (0x0001). Matches OnShape-style 3MF
     /// packages, which do this even when the values fit in 32 bits.
-    func finalize(forceZip64ExtraFields: Bool = false) -> Data {
+    ///
+    /// `trailingComment`, when non-empty, is written as the EOCD's own
+    /// comment field (its length recorded correctly), letting fixtures embed
+    /// bytes after the real EOCD record — including a fake `PK\x05\x06`
+    /// signature — to exercise `ZipArchive`'s EOCD disambiguation.
+    func finalize(forceZip64ExtraFields: Bool = false, trailingComment: Data = Data()) -> Data {
         var output = body
         let centralDirStart = output.count
 
@@ -70,7 +81,7 @@ struct ZipWriter {
             let nameData = Data(entry.path.utf8)
             var extra = Data()
             var compressedSize32 = UInt32(entry.compressed.count)
-            var uncompressedSize32 = UInt32(entry.uncompressed.count)
+            var uncompressedSize32 = entry.declaredUncompressedSizeOverride.map(UInt32.init) ?? UInt32(entry.uncompressed.count)
             var localOffset32 = UInt32(entry.localHeaderOffset)
             if forceZip64ExtraFields {
                 extra.appendLE(UInt16(0x0001))
@@ -115,8 +126,9 @@ struct ZipWriter {
         eocd.appendLE(UInt16(entries.count))
         eocd.appendLE(UInt32(centralDirSize))
         eocd.appendLE(UInt32(centralDirStart))
-        eocd.appendLE(UInt16(0))                          // comment length
+        eocd.appendLE(UInt16(trailingComment.count))      // comment length
         output.append(eocd)
+        output.append(trailingComment)
 
         return output
     }

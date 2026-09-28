@@ -221,6 +221,14 @@ centinelas `0xFFFFFFFF` en todos los tamaños/desplazamientos del directorio cen
 archivo sea pequeño (el exportador de OnShape lo hace). Si un archivo sigue sin abrirse,
 adjúntalo a un issue.
 
+### Un modelo muy grande muestra un icono genérico en Finder
+
+Las miniaturas de Finder se generan con un límite de 3 millones de triángulos y unos 20
+segundos, para que un modelo enorme no bloquee Finder. Por encima de eso, un 3MF con una
+miniatura incrustada por el slicer sigue mostrando esa imagen; los demás archivos usan el
+icono predeterminado. La vista previa con la barra espaciadora abre modelos de hasta 20
+millones de triángulos, y la app Filament admite modelos aún más grandes.
+
 ## Contribuciones
 
 Las issues y pull requests son bienvenidas. Por favor, mantén `ThreeMFKit` sin dependencias y asegúrate de que `swift run three-mf-validate` y `swift build` pasen antes de abrir un PR (CI ejecuta esto más una compilación de Xcode en cada push).

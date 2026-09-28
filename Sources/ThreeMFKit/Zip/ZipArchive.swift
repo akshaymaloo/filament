@@ -1,6 +1,31 @@
 import Foundation
 import Compression
 
+/// Tracks the cumulative uncompressed bytes extracted from one archive load,
+/// across every `data(for:)`/`dataCaseInsensitive(for:)` call, so a package
+/// with many individually-small-but-numerous entries (or one entry whose
+/// declared size is a lie) can't inflate far past a caller's total budget.
+/// A reference type so it can be shared across a `ZipArchive` value and its
+/// lazily-parsed external model parts without threading a return value
+/// through every call site.
+final class ExtractionBudget {
+    private var extracted = 0
+    let limit: Int
+
+    init(limit: Int = .max) {
+        self.limit = limit
+    }
+
+    /// Charges `bytes` against the budget *before* the caller allocates them,
+    /// throwing if the running total would exceed `limit`.
+    func charge(_ bytes: Int, path: String) throws {
+        extracted += bytes
+        guard extracted <= limit else {
+            throw ThreeMFError.archiveTooLarge(limit: limit)
+        }
+    }
+}
+
 /// A read-only, dependency-free ZIP archive reader tailored to OPC/3MF packages.
 struct ZipArchive {
     private struct CentralEntry {
@@ -20,35 +45,31 @@ struct ZipArchive {
     private static let zip64ExtraFieldID: UInt16 = 0x0001
     private static let zip64FieldSentinel32: UInt32 = 0xFFFF_FFFF
     private static let zip64FieldSentinel16: UInt16 = 0xFFFF
+    /// DEFLATE's theoretical maximum compression ratio is ~1032:1 (a stream
+    /// of empty blocks). A declared ratio well beyond that is either a lying
+    /// header or a zip-bomb; reject it before ever attempting to inflate.
+    private static let maxPlausibleDeflateRatio = 1100
+    /// Only apply the ratio check once the declared uncompressed size is
+    /// large enough that a legitimate tiny/incompressible file's overhead
+    /// (a few bytes) can't trip it.
+    private static let ratioCheckThreshold = 1024 * 1024
 
     private let data: Data
     private let entriesByPath: [String: CentralEntry]
     private let orderedPaths: [String]
+    private let budget: ExtractionBudget
 
     /// All entry paths, in central-directory (archive) order.
     var entryPaths: [String] { orderedPaths }
 
-    init(data: Data) throws {
+    init(data: Data, budget: ExtractionBudget = ExtractionBudget()) throws {
         self.data = data
+        self.budget = budget
         guard data.count >= 22 else { throw ThreeMFError.notAZipArchive }
 
-        // Scan backward for the EOCD signature within the last 65557 bytes
-        // (22-byte record + max 65535-byte comment).
-        let searchWindow = min(data.count, 65557)
-        let searchStart = data.count - searchWindow
-        var eocdOffset: Int? = nil
-        var i = data.count - 22
-        while i >= searchStart {
-            let reader = ByteReader(data.subdata(in: (data.startIndex + i)..<data.endIndex))
-            if let sig = try? reader.u32(0), sig == Self.eocdSignature {
-                eocdOffset = i
-                break
-            }
-            i -= 1
-        }
-        guard let eocd = eocdOffset else { throw ThreeMFError.notAZipArchive }
+        let eocd = try Self.locateEOCD(in: data)
 
-        let eocdReader = ByteReader(data.subdata(in: (data.startIndex + eocd)..<data.endIndex))
+        let eocdReader = ByteReader(data, offset: eocd)
         var centralDirCount = Int(try eocdReader.u16(10))
         var centralDirSize = Int(try eocdReader.u32(12))
         var centralDirOffset = Int(try eocdReader.u32(16))
@@ -57,13 +78,13 @@ struct ZipArchive {
         let looksZip64 = centralDirCount == 0xFFFF || centralDirOffset == 0xFFFF_FFFF || centralDirSize == 0xFFFF_FFFF
         if looksZip64, eocd >= 20 {
             let locatorOffset = eocd - 20
-            let locatorReader = ByteReader(data.subdata(in: (data.startIndex + locatorOffset)..<data.endIndex))
+            let locatorReader = ByteReader(data, offset: locatorOffset)
             if let sig = try? locatorReader.u32(0), sig == Self.zip64LocatorSignature {
                 let zip64EocdOffset = Int(try locatorReader.u64(8))
                 guard zip64EocdOffset >= 0, zip64EocdOffset < data.count else {
                     throw ThreeMFError.corruptArchive("invalid zip64 EOCD offset")
                 }
-                let zip64Reader = ByteReader(data.subdata(in: (data.startIndex + zip64EocdOffset)..<data.endIndex))
+                let zip64Reader = ByteReader(data, offset: zip64EocdOffset)
                 let zip64Sig = try zip64Reader.u32(0)
                 guard zip64Sig == Self.zip64EocdSignature else {
                     throw ThreeMFError.corruptArchive("expected zip64 EOCD signature")
@@ -91,7 +112,7 @@ struct ZipArchive {
             guard cursor + 46 <= data.count else {
                 throw ThreeMFError.corruptArchive("truncated central directory record")
             }
-            let reader = ByteReader(data.subdata(in: (data.startIndex + cursor)..<data.endIndex))
+            let reader = ByteReader(data, offset: cursor)
             let sig = try reader.u32(0)
             guard sig == Self.centralHeaderSignature else {
                 throw ThreeMFError.corruptArchive("bad central directory signature")
@@ -154,6 +175,42 @@ struct ZipArchive {
         let lower = path.lowercased()
         guard let match = orderedPaths.first(where: { $0.lowercased() == lower }) else { return nil }
         return try data(for: match, sizeLimit: sizeLimit)
+    }
+
+    /// Scans backward through the last up-to-65557 bytes (22-byte record +
+    /// max 65535-byte comment) for the EOCD signature, without copying any
+    /// bytes. Some archives are followed by a comment that itself happens to
+    /// contain the 4-byte EOCD signature (or is crafted to); disambiguate by
+    /// preferring the candidate whose declared comment length reaches
+    /// exactly the end of the data (i.e. it owns the trailing bytes as its
+    /// own comment). If no candidate is internally consistent, fall back to
+    /// the last (rightmost) signature match, matching prior behavior.
+    private static func locateEOCD(in data: Data) throws -> Int {
+        let searchWindow = min(data.count, 65557)
+        let searchStart = data.count - searchWindow
+        var candidates: [Int] = []
+        data.withUnsafeBytes { (raw: UnsafeRawBufferPointer) in
+            guard let base = raw.baseAddress, raw.count >= 4 else { return }
+            let bytes = base.assumingMemoryBound(to: UInt8.self)
+            var i = data.count - 22
+            while i >= searchStart {
+                if bytes[i] == 0x50, bytes[i + 1] == 0x4B, bytes[i + 2] == 0x05, bytes[i + 3] == 0x06 {
+                    candidates.append(i)
+                }
+                i -= 1
+            }
+        }
+        guard !candidates.isEmpty else { throw ThreeMFError.notAZipArchive }
+
+        for candidate in candidates {
+            let reader = ByteReader(data, offset: candidate)
+            if let commentLen = try? reader.u16(20), candidate + 22 + Int(commentLen) == data.count {
+                return candidate
+            }
+        }
+        // `candidates` was built scanning from the highest offset downward,
+        // so the first entry is the rightmost (last) match in the file.
+        return candidates[0]
     }
 
     /// Resolves compressed size / uncompressed size / local-header offset from
@@ -222,10 +279,23 @@ struct ZipArchive {
         if entry.uncompressedSize > sizeLimit {
             throw ThreeMFError.entryTooLarge(path: entry.path, size: entry.uncompressedSize, limit: sizeLimit)
         }
+        // DEFLATE's theoretical max ratio is ~1032:1; a declared ratio well
+        // beyond that on a non-trivial entry is a lying header (or a bomb)
+        // and must be rejected before `inflate` allocates the declared size.
+        if entry.compressionMethod == 8, entry.uncompressedSize > Self.ratioCheckThreshold {
+            let ratio = entry.compressedSize > 0 ? entry.uncompressedSize / entry.compressedSize : Int.max
+            guard ratio <= Self.maxPlausibleDeflateRatio else {
+                throw ThreeMFError.corruptArchive("implausible compression ratio for \(entry.path) (\(entry.uncompressedSize):\(entry.compressedSize))")
+            }
+        }
+        // Charge the *declared* uncompressed size against the aggregate
+        // budget before allocating any output buffer for it.
+        try budget.charge(entry.uncompressedSize, path: entry.path)
+
         guard entry.localHeaderOffset >= 0, entry.localHeaderOffset + 30 <= data.count else {
             throw ThreeMFError.corruptArchive("local header offset out of range for \(entry.path)")
         }
-        let localReader = ByteReader(data.subdata(in: (data.startIndex + entry.localHeaderOffset)..<data.endIndex))
+        let localReader = ByteReader(data, offset: entry.localHeaderOffset)
         let sig = try localReader.u32(0)
         guard sig == Self.localHeaderSignature else {
             throw ThreeMFError.corruptArchive("bad local file header signature for \(entry.path)")
@@ -243,10 +313,10 @@ struct ZipArchive {
 
         switch entry.compressionMethod {
         case 0: // STORE
-            let bytesReader = ByteReader(data.subdata(in: (data.startIndex + dataStart)..<data.endIndex))
+            let bytesReader = ByteReader(data, offset: dataStart)
             return try bytesReader.slice(0, length: entry.uncompressedSize)
         case 8: // DEFLATE (raw)
-            let bytesReader = ByteReader(data.subdata(in: (data.startIndex + dataStart)..<data.endIndex))
+            let bytesReader = ByteReader(data, offset: dataStart)
             let compressed = try bytesReader.slice(0, length: entry.compressedSize)
             return try Self.inflate(compressed, expectedSize: entry.uncompressedSize, path: entry.path)
         default:

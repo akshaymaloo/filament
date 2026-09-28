@@ -10,6 +10,13 @@ public enum ThreeMFError: Error, CustomStringConvertible {
     /// A non-3MF mesh format (STL/OBJ/PLY) failed to parse, or the input
     /// format could not be determined.
     case malformedMesh(String)
+    /// The mesh exceeds a caller-supplied `maxTriangles` budget.
+    case meshTooLarge(triangles: Int, limit: Int)
+    /// Loading was aborted by a caller-supplied `shouldCancel` check.
+    case cancelled
+    /// The sum of every extracted (uncompressed) entry in the archive
+    /// exceeded a caller-supplied `maxTotalUncompressedBytes` budget.
+    case archiveTooLarge(limit: Int)
 
     public var description: String {
         switch self {
@@ -27,6 +34,12 @@ public enum ThreeMFError: Error, CustomStringConvertible {
             return "Corrupt ZIP archive: \(detail)"
         case .malformedMesh(let detail):
             return "Malformed mesh data: \(detail)"
+        case .meshTooLarge(let triangles, let limit):
+            return "Mesh has too many triangles (\(triangles), limit \(limit))."
+        case .cancelled:
+            return "Loading was cancelled."
+        case .archiveTooLarge(let limit):
+            return "Archive's total uncompressed content exceeds the size limit (\(limit) bytes)."
         }
     }
 }

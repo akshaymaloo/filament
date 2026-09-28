@@ -3,15 +3,21 @@ import Foundation
 /// Parses Wavefront OBJ files (positions + face indices only; normals,
 /// texture coordinates, materials, and groups are ignored).
 public enum OBJParser {
-    public static func parse(data: Data) throws -> TriangleMesh {
+    public static func parse(data: Data, maxTriangles: Int? = nil, shouldCancel: (() -> Bool)? = nil) throws -> TriangleMesh {
         guard let text = String(data: data, encoding: .utf8) ?? String(data: data, encoding: .ascii) else {
             throw ThreeMFError.malformedMesh("OBJ file is not valid UTF-8/ASCII text.")
         }
 
         var positions: [SIMD3<Float>] = []
         var indices: [UInt32] = []
+        var triangleCount = 0
+        var linePollCounter = 0
 
         for rawLine in text.split(separator: "\n", omittingEmptySubsequences: true) {
+            linePollCounter += 1
+            if linePollCounter & 0xFFFF == 0, let shouldCancel, shouldCancel() {
+                throw ThreeMFError.cancelled
+            }
             // Strip a trailing comment and surrounding whitespace.
             let withoutComment = rawLine.split(separator: "#", maxSplits: 1, omittingEmptySubsequences: false)[0]
             let line = withoutComment.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -41,6 +47,10 @@ public enum OBJParser {
                     faceIndices.append(resolved)
                 }
                 // Triangulate an n-gon via a fan: (v0, vi, vi+1).
+                triangleCount += faceIndices.count - 2
+                if let maxTriangles, triangleCount > maxTriangles {
+                    throw ThreeMFError.meshTooLarge(triangles: triangleCount, limit: maxTriangles)
+                }
                 for i in 1..<(faceIndices.count - 1) {
                     indices.append(faceIndices[0])
                     indices.append(faceIndices[i])
@@ -57,7 +67,10 @@ public enum OBJParser {
 
     /// Parses a face vertex token of the form `v`, `v/vt`, `v//vn`, or
     /// `v/vt/vn`, returning only the (0-based, resolved) position index.
-    /// Negative indices are relative to the current vertex count.
+    /// Negative indices are relative to the current vertex count. `Int(...)`
+    /// parsing and the arithmetic below can't trap: `vertexCount` is a
+    /// non-negative array count, so `vertexCount + raw + 1` stays well within
+    /// `Int`'s range even for `raw == Int.min`.
     private static func resolvePositionIndex(token: Substring, vertexCount: Int) throws -> UInt32 {
         let components = token.split(separator: "/", omittingEmptySubsequences: false)
         guard let first = components.first, let raw = Int(first) else {
