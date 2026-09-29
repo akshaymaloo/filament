@@ -11,10 +11,19 @@ set -euo pipefail
 threshold="${1:-85}"
 
 bin_path="$(swift build --show-bin-path)"
-test_binary="${bin_path}/ThreeMFKitTests.xctest/Contents/MacOS/ThreeMFKitTests"
 profdata="${bin_path}/codecov/default.profdata"
 
-if [[ ! -f "$test_binary" ]]; then
+# The bundle name varies by toolchain (ThreeMFKitTests.xctest vs
+# ThreeMFKitPackageTests.xctest), so take whichever one the build produced.
+test_binary=""
+for candidate in "$bin_path"/*.xctest/Contents/MacOS/*; do
+  if [[ -f "$candidate" && -x "$candidate" ]]; then
+    test_binary="$candidate"
+    break
+  fi
+done
+
+if [[ -z "$test_binary" ]]; then
   echo "error: test binary not found at ${test_binary} — run 'swift test --enable-code-coverage' first" >&2
   exit 1
 fi
