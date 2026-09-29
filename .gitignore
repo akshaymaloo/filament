@@ -11,6 +11,8 @@ xcuserdata/
 DerivedData/
 *.xcworkspace/xcuserdata/
 build/
+.release-build/
+dist/
 
 # macOS
 .DS_Store

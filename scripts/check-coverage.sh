@@ -24,7 +24,7 @@ for candidate in "$bin_path"/*.xctest/Contents/MacOS/*; do
 done
 
 if [[ -z "$test_binary" ]]; then
-  echo "error: test binary not found at ${test_binary} — run 'swift test --enable-code-coverage' first" >&2
+  echo "error: no *.xctest bundle found in ${bin_path} — run 'swift test --enable-code-coverage' first" >&2
   exit 1
 fi
 if [[ ! -f "$profdata" ]]; then
