@@ -201,6 +201,18 @@ swift run three-mf-validate # self-contained validation suite (no XCTest needed)
 swift test                  # XCTest suite (requires a full Xcode toolchain)
 ```
 
+### Testing
+
+- `swift run three-mf-validate` — a standalone, dependency-free validation
+  suite (no XCTest needed) that exercises the core parsing/loading paths.
+- `swift test` — the full XCTest suite (`Tests/ThreeMFKitTests`), covering
+  formatting, parsing, loading, golden fixtures, offscreen render smoke
+  tests, and algorithmic performance guards.
+- `swift test --enable-code-coverage && scripts/check-coverage.sh` — runs the
+  suite with coverage instrumentation and fails if `ThreeMFKit`'s line
+  coverage drops below a floor (85% by default; pass a different threshold
+  as the first argument).
+
 ## Architecture
 
 - **`ThreeMFKit`** (`Sources/ThreeMFKit`) — dependency-free core: a read-only

@@ -293,6 +293,103 @@ public enum ThreeMFFixtureFactory {
         ])
     }
 
+    /// A realistic multi-plate Bambu/Orca project combining every piece of
+    /// per-plate metadata the real parsers understand at once: two plates
+    /// (`model_settings.config` plate assignments), a three-color project
+    /// palette (`project_settings.config`), a painted triangle on plate 1's
+    /// object (mixed with its base-extruder triangles), a plain (unpainted,
+    /// non-default-extruder) object on plate 2, per-plate slicer stats
+    /// (`Metadata/plate_<id>.json`), per-plate thumbnails, and a package
+    /// thumbnail.
+    public static func bambuMultiPlateProject() -> Data {
+        // Same encoding as `bambuPaintedTriangles`: `paint_color="8"` decodes
+        // to extruder 2 (palette index 1 / green) via `PaintColorDecoder`.
+        let paintColorForExtruder2 = "8"
+
+        var object1 = "<object id=\"1\" type=\"model\">\n  <mesh>\n    <vertices>\n"
+        for v in cubeVertices {
+            object1 += "      <vertex x=\"\(v.0)\" y=\"\(v.1)\" z=\"\(v.2)\"/>\n"
+        }
+        object1 += "    </vertices>\n    <triangles>\n"
+        for (index, t) in cubeTriangles.enumerated() {
+            if index == 0 {
+                object1 += "      <triangle v1=\"\(t.0)\" v2=\"\(t.1)\" v3=\"\(t.2)\" paint_color=\"\(paintColorForExtruder2)\"/>\n"
+            } else {
+                object1 += "      <triangle v1=\"\(t.0)\" v2=\"\(t.1)\" v3=\"\(t.2)\"/>\n"
+            }
+        }
+        object1 += "    </triangles>\n  </mesh>\n</object>\n"
+
+        let secondCube = cubeVertices.map { ($0.0 + 50, $0.1, $0.2) }
+        let object2 = meshObjectXML(objectId: 2, vertices: secondCube, triangles: cubeTriangles)
+
+        let modelXML = """
+        <?xml version="1.0" encoding="UTF-8"?>
+        <model unit="millimeter" xmlns="http://schemas.microsoft.com/3dmanufacturing/core/2015/02">
+          <resources>
+        \(object1)
+        \(object2)
+          </resources>
+          <build>
+            <item objectid="1"/>
+            <item objectid="2"/>
+          </build>
+        </model>
+        """
+
+        let modelSettingsXML = """
+        <?xml version="1.0" encoding="UTF-8"?>
+        <config>
+          <object id="1">
+            <metadata key="name" value="cubeA.stl"/>
+            <metadata key="extruder" value="1"/>
+          </object>
+          <object id="2">
+            <metadata key="name" value="cubeB.stl"/>
+            <metadata key="extruder" value="3"/>
+          </object>
+          <plate>
+            <metadata key="plater_id" value="1"/>
+            <metadata key="plater_name" value="Cube A"/>
+            <model_instance>
+              <metadata key="object_id" value="1"/>
+            </model_instance>
+          </plate>
+          <plate>
+            <metadata key="plater_id" value="2"/>
+            <metadata key="plater_name" value="Cube B"/>
+            <model_instance>
+              <metadata key="object_id" value="2"/>
+            </model_instance>
+          </plate>
+        </config>
+        """
+
+        let projectSettingsJSON = """
+        {"filament_colour": ["#FF0000", "#00FF00", "#0000FF"], "filament_type": ["PLA", "PETG", "ABS"]}
+        """
+
+        let plate1JSON = """
+        {"prediction": 5400, "weight": 15.2, "printer_model_id": "X1C"}
+        """
+        let plate2JSON = """
+        {"prediction": 2700, "weight": 8.4, "printer_model_id": "X1C"}
+        """
+
+        return archive(deflate: true, entries: [
+            ("[Content_Types].xml", Data(contentTypesXML.utf8)),
+            ("_rels/.rels", Data(relsXML(includeThumbnail: true).utf8)),
+            ("3D/3dmodel.model", Data(modelXML.utf8)),
+            ("Metadata/model_settings.config", Data(modelSettingsXML.utf8)),
+            ("Metadata/project_settings.config", Data(projectSettingsJSON.utf8)),
+            ("Metadata/plate_1.json", Data(plate1JSON.utf8)),
+            ("Metadata/plate_2.json", Data(plate2JSON.utf8)),
+            ("Metadata/plate_1.png", TinyPNGFixture.data),
+            ("Metadata/plate_2.png", TinyPNGFixture.data),
+            ("Metadata/thumbnail.png", TinyPNGFixture.data)
+        ])
+    }
+
     /// A cube whose last triangle references vertex index 999 (far beyond
     /// the 8 declared vertices); the other 11 triangles are valid. Exercises
     /// `ModelXMLParser`'s out-of-range triangle filtering (fix 1).

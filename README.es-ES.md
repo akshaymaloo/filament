@@ -169,9 +169,22 @@ Compilar el esquema `Filament` también compila ambas extensiones incrustadas (s
 
 ```bash
 swift build                 # compila la biblioteca
-swift run three-mf-validate #套件 de validación autocontenido (no se necesita XCTest)
-swift test                  #套件 de pruebas XCTest (requiere la herramienta Xcode completa)
+swift run three-mf-validate # suite de validación autocontenido (no se necesita XCTest)
+swift test                  # suite de pruebas XCTest (requiere la herramienta Xcode completa)
 ```
+
+### Pruebas
+
+- `swift run three-mf-validate` — una suite de validación autocontenida y sin
+  dependencias (no requiere XCTest) que ejercita las rutas principales de
+  análisis y carga.
+- `swift test` — la suite completa de XCTest (`Tests/ThreeMFKitTests`), que
+  cubre formato, análisis, carga, fixtures de referencia ("golden"), pruebas
+  de renderizado sin pantalla y guardas de rendimiento algorítmico.
+- `swift test --enable-code-coverage && scripts/check-coverage.sh` — ejecuta
+  la suite con instrumentación de cobertura y falla si la cobertura de líneas
+  de `ThreeMFKit` cae por debajo de un mínimo (85% por defecto; puedes pasar
+  otro umbral como primer argumento).
 
 ## Arquitectura
 

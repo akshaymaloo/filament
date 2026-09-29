@@ -29,7 +29,9 @@ jobs:
       - name: Run validation suite
         run: swift run three-mf-validate
       - name: Run XCTest suite
-        run: swift test
+        run: swift test --enable-code-coverage
+      - name: Check coverage floor
+        run: scripts/check-coverage.sh 85
 
   app:
     name: App + Quick Look extensions (xcodebuild)

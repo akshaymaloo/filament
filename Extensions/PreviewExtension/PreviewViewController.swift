@@ -225,17 +225,17 @@ final class PreviewViewController: NSViewController, QLPreviewingController {
         overlayStack.arrangedSubviews.forEach { $0.removeFromSuperview() }
 
         var rows: [String] = []
-        if let dimensions = PreviewFormatter.dimensions(for: plate.mesh, unit: unit) {
+        if let dimensions = PrintStatsFormatting.dimensions(for: plate.mesh, unit: unit) {
             rows.append("▭ \(dimensions)")
         }
-        rows.append("△ \(PreviewFormatter.triangleCount(plate.mesh.triangleCount))")
+        rows.append("△ \(PrintStatsFormatting.triangleCount(plate.mesh.triangleCount))")
 
         if let stats = plate.stats {
             if let seconds = stats.predictionSeconds {
-                rows.append("⏱ \(PreviewFormatter.duration(seconds: seconds))")
+                rows.append("⏱ \(PrintStatsFormatting.duration(seconds: seconds))")
             }
             if let grams = stats.weightGrams {
-                rows.append("⚖︎ \(PreviewFormatter.weight(grams: grams))")
+                rows.append("⚖︎ \(PrintStatsFormatting.weight(grams: grams))")
             }
             if let printer = stats.printerModel {
                 rows.append("🖨 \(printer)")
@@ -249,48 +249,6 @@ final class PreviewViewController: NSViewController, QLPreviewingController {
             overlayStack.addArrangedSubview(label)
         }
     }
-}
-
-/// Small formatting helpers for the preview extension's overlay.
-private enum PreviewFormatter {
-    static func duration(seconds: Int) -> String {
-        let hours = seconds / 3600
-        let minutes = (seconds % 3600) / 60
-        return hours > 0 ? "\(hours)h \(minutes)m" : "\(minutes)m"
-    }
-
-    static func weight(grams: Double) -> String {
-        String(format: "%.1f g", grams)
-    }
-
-    /// Formats a mesh's bounding box as "W × D × H mm", converting from the
-    /// document's declared length unit into millimeters. Returns `nil` for an
-    /// empty mesh (no bounding box).
-    static func dimensions(for mesh: TriangleMesh, unit: LengthUnit) -> String? {
-        guard let box = mesh.boundingBox else { return nil }
-        let mmPerUnit = Float(unit.millimetersPerUnit)
-        let size = box.max - box.min
-        let width = size.x * mmPerUnit
-        let depth = size.y * mmPerUnit
-        let height = size.z * mmPerUnit
-        return String(format: "%.1f × %.1f × %.1f mm", width, depth, height)
-    }
-
-    /// Formats a triangle count with thousands separators, e.g. "12,345 triangles".
-    static func triangleCount(_ count: Int) -> String {
-        let formatted = Formatter.groupedInteger.string(from: NSNumber(value: count)) ?? "\(count)"
-        return count == 1 ? "\(formatted) triangle" : "\(formatted) triangles"
-    }
-}
-
-private extension Formatter {
-    static let groupedInteger: NumberFormatter = {
-        let formatter = NumberFormatter()
-        formatter.numberStyle = .decimal
-        formatter.groupingSeparator = ","
-        formatter.usesGroupingSeparator = true
-        return formatter
-    }()
 }
 
 /// A container `NSView` that invokes a callback whenever its effective
