@@ -1,5 +1,5 @@
 import Foundation
-import ThreeMFKit
+import FilamentKit
 import os.lock
 
 /// Thread-safe flag threaded into `ThreeMFLoader.Options.shouldCancel` so an
@@ -14,7 +14,7 @@ private final class LoadCancellationFlag: @unchecked Sendable {
 /// plate, and any load error. Loading happens off the main thread.
 @MainActor
 final class DocumentModel: ObservableObject {
-    @Published private(set) var document: ThreeMFDocument?
+    @Published private(set) var document: ModelDocument?
     @Published var selectedPlateIndex: Int = 0
     @Published private(set) var isLoading = false
     @Published var errorMessage: String?
@@ -77,8 +77,8 @@ final class DocumentModel: ObservableObject {
     }
 
     private static func describe(_ error: Error) -> String {
-        if let threeMFError = error as? ThreeMFError {
-            return threeMFError.description
+        if let filamentError = error as? FilamentError {
+            return filamentError.description
         }
         return error.localizedDescription
     }

@@ -1,5 +1,5 @@
 import QuickLookThumbnailing
-import ThreeMFKit
+import FilamentKit
 import AppKit
 import SceneKit
 import Metal

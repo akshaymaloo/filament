@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Fails CI if ThreeMFKit's XCTest line coverage drops below a threshold.
+# Fails CI if FilamentKit's XCTest line coverage drops below a threshold.
 #
 # Usage: scripts/check-coverage.sh [threshold]
 #   threshold - minimum acceptable TOTAL line-coverage percentage (default 85)
@@ -13,8 +13,8 @@ threshold="${1:-85}"
 bin_path="$(swift build --show-bin-path)"
 profdata="${bin_path}/codecov/default.profdata"
 
-# The bundle name varies by toolchain (ThreeMFKitTests.xctest vs
-# ThreeMFKitPackageTests.xctest), so take whichever one the build produced.
+# The bundle name varies by toolchain (FilamentKitTests.xctest vs
+# FilamentKitPackageTests.xctest), so take whichever one the build produced.
 test_binary=""
 for candidate in "$bin_path"/*.xctest/Contents/MacOS/*; do
   if [[ -f "$candidate" && -x "$candidate" ]]; then
@@ -34,7 +34,7 @@ fi
 
 report="$(xcrun llvm-cov report "$test_binary" \
   -instr-profile="$profdata" \
-  -ignore-filename-regex='(Tests|\.build|ThreeMFValidate)/')"
+  -ignore-filename-regex='(Tests|\.build|FilamentValidate|FilamentTestSupport)/')"
 
 total_line="$(echo "$report" | grep '^TOTAL')"
 if [[ -z "$total_line" ]]; then
@@ -54,7 +54,7 @@ if [[ -z "$line_coverage" ]]; then
   exit 1
 fi
 
-echo "ThreeMFKit line coverage: ${line_coverage}% (threshold: ${threshold}%)"
+echo "FilamentKit line coverage: ${line_coverage}% (threshold: ${threshold}%)"
 
 # Compare as integers scaled by 100 to avoid depending on bc/awk float quirks.
 coverage_scaled="$(awk -v v="$line_coverage" 'BEGIN { printf "%d", v * 100 }')"

@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/icon.png" width="128" alt="Icono de la aplicación Filament">
+  <img src="docs/images/icon.png" width="128" alt="Icono de la aplicación Filament">
 </p>
 
 <h1 align="center">Filament</h1>
@@ -29,7 +29,7 @@ estudio, y gira alrededor del modelo; luego ábrelo en pantalla completa en la
 aplicación.
 
 <p align="center">
-  <img src="docs/demo.gif" width="80%" alt="Vista previa de archivos 3MF y STL en Finder con Quick Look, alternando color y abriendo en la aplicación Filament">
+  <img src="docs/images/demo.gif" width="80%" alt="Vista previa de archivos 3MF y STL en Finder con Quick Look, alternando color y abriendo en la aplicación Filament">
 </p>
 
 ## Descarga
@@ -48,17 +48,17 @@ Esto descarga la última versión, verifica su checksum, la instala en
 
 1. Descarga **Filament.dmg** desde la [última versión](https://github.com/akshaymaloo/filament/releases/latest)
    y arrastra Filament a Aplicaciones.
-2. Abre Filament. Como la compilación aún no está notarizada, macOS bloquea
-   el primer inicio: ve a **Ajustes del Sistema › Privacidad y Seguridad** y
-   haz clic en **Abrir de todos modos** (o ejecuta
-   `xattr -dr com.apple.quarantine /Applications/Filament.app`).
-3. Abrir la aplicación una vez registra sus extensiones de Quick Look con
+2. Abre Filament una vez. Así se registran sus extensiones de Quick Look en
    Finder.
 
 Las compilaciones funcionan en Mac con **Apple silicon e Intel**, macOS 14 o
-posterior. Notarizar las versiones requiere una cuenta de pago de Apple
-Developer — si Filament te resulta útil,
-[apoyarlo en Ko-fi](https://ko-fi.com/akshaymaloo) ayuda a lograrlo.
+posterior. Las versiones están firmadas con un Developer ID y notarizadas por
+Apple.
+
+> Las versiones anteriores a la v0.4.0 no estaban notarizadas. Si macOS dice
+> que no puede verificar Filament, ve a **Ajustes del Sistema › Privacidad y
+> Seguridad** y haz clic en **Abrir igualmente**, o actualiza a la última
+> versión.
 
 ## Formatos compatibles y funciones
 
@@ -75,7 +75,7 @@ para:
 - **`.ply`** — ASCII y binario (little/big endian).
 
 <p align="center">
-  <img src="docs/color-preview.gif" width="45%" alt="Vista previa 3MF a todo color interactiva girando en Filament">
+  <img src="docs/images/color-preview.gif" width="45%" alt="Vista previa 3MF a todo color interactiva girando en Filament">
 </p>
 <p align="center"><sub>Los modelos 3MF multimaterial se renderizan con sus colores reales de filamento.</sub></p>
 
@@ -287,33 +287,9 @@ Quick Look a nivel del sistema.
 
 ## Desarrollo
 
-`ThreeMFKit` es un paquete Swift sin dependencias y puede compilarse y
-probarse únicamente con la herramienta Swift:
-
-```bash
-swift build                     # compila la biblioteca
-swift run three-mf-validate     # suite de validación autocontenida (sin XCTest)
-swift test                      # XCTest: análisis, fixtures de referencia, renderizado y rendimiento
-swift test --enable-code-coverage && scripts/check-coverage.sh   # falla por debajo del 85% de cobertura
-```
-
-### Arquitectura
-
-- **`ThreeMFKit`** (`Sources/ThreeMFKit`) — núcleo sin dependencias: lector
-  ZIP de solo lectura (vía el framework `Compression`), análisis XML de
-  OPC / 3MF incluida la Extensión de Producción, análisis de mallas
-  STL/OBJ/PLY, una fachada `ModelLoader` que distribuye por tipo de archivo,
-  extracción de placas/miniaturas/estadísticas y construcción de escenas
-  SceneKit (`ModelSCNView`, cámaras, iluminación, sombras).
-- **`Filament`** (`App/Filament`) — la aplicación host de SwiftUI. Abre o
-  recibe por arrastre un archivo de modelo y explora las placas de
-  construcción de forma interactiva. Declara el UTI personalizado
-  `com.filament3d.3mf` e incrusta ambas extensiones de Quick Look.
-- **`ThumbnailExtension`** (`Extensions/ThumbnailExtension`) — una extensión
-  de aplicación `QLThumbnailProvider` para miniaturas de Finder/Spotlight.
-- **`PreviewExtension`** (`Extensions/PreviewExtension`) — una extensión de
-  aplicación `QLPreviewingController` para el panel completo de vista previa
-  con barra espaciadora.
+Consulta [CONTRIBUTING.md](CONTRIBUTING.md) (en inglés) para la configuración
+de desarrollo, los comandos de pruebas/cobertura, la arquitectura del
+proyecto y el proceso de publicación.
 
 ### Identificadores de Tipo Uniforme
 
@@ -330,22 +306,11 @@ a Filament a menos que las extensiones también lo reclamen. Por eso las
 extensiones de vista previa y miniaturas incluyen los UTI de 3MF de terceros
 más comunes en `QLSupportedContentTypes`, además de `com.filament3d.3mf`.
 
-### Publicar una versión
-
-1. Incrementa `MARKETING_VERSION` en `project.yml`.
-2. Opcionalmente añade notas de la versión en `docs/release-notes/vX.Y.Z.md`.
-3. Publica una etiqueta: `git tag vX.Y.Z && git push origin vX.Y.Z`.
-
-`.github/workflows/release.yml` compila entonces un `Filament.app` universal
-y firmado ad-hoc, lo empaqueta en `Filament.zip` / `Filament.dmg` /
-`SHA256SUMS.txt`, y abre una versión de GitHub en **borrador** para revisión.
-
 ## Contribuciones
 
-Las issues y pull requests son bienvenidas. Por favor, mantén `ThreeMFKit`
-sin dependencias y asegúrate de que `swift run three-mf-validate` y
-`swift build` pasen antes de abrir un PR (CI ejecuta esto más una
-compilación de Xcode en cada push).
+Las issues y pull requests son bienvenidas — consulta
+[CONTRIBUTING.md](CONTRIBUTING.md) (en inglés) para la configuración de
+desarrollo y la lista de verificación del PR.
 
 ## Soporte
 
@@ -354,11 +319,9 @@ apoyar su desarrollo:
 
 <a href="https://ko-fi.com/akshaymaloo"><img src="https://ko-fi.com/img/githubbutton_sm.svg" alt="Apóyame en Ko-fi" height="36"></a>
 
-Hoy las versiones están **firmadas de forma ad hoc "para ejecución local"**,
-por lo que macOS muestra una advertencia de Gatekeeper en el primer inicio.
-Las donaciones van destinadas a una membresía del **Apple Developer Program**
-para que futuras versiones puedan ser **notarizadas** — sin advertencias de
-Gatekeeper — y, eventualmente, publicadas en la **Mac App Store**. ¡Gracias! 🙏
+Las donaciones cubren la membresía del **Apple Developer Program** que
+mantiene las versiones firmadas y notarizadas, y ayudan a una futura versión
+en la **Mac App Store**. ¡Gracias! 🙏
 
 ## Licencia
 

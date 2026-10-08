@@ -16,3 +16,14 @@ dist/
 
 # macOS
 .DS_Store
+
+# Code-signing secrets (never commit these)
+*.p12
+*.p8
+*.cer
+*.mobileprovision
+AuthKey_*.p8
+
+# Editors
+.vscode/
+.idea/

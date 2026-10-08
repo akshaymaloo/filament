@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/icon.png" width="128" alt="Filament app icon">
+  <img src="docs/images/icon.png" width="128" alt="Filament app icon">
 </p>
 
 <h1 align="center">Filament</h1>
@@ -28,7 +28,7 @@ color and a neutral studio look, and orbit the model — then open it full-scree
 in the app.
 
 <p align="center">
-  <img src="docs/demo.gif" width="80%" alt="Previewing 3MF and STL files in Finder with Quick Look, toggling color, and opening in the Filament app">
+  <img src="docs/images/demo.gif" width="80%" alt="Previewing 3MF and STL files in Finder with Quick Look, toggling color, and opening in the Filament app">
 </p>
 
 ## Download
@@ -46,15 +46,14 @@ This downloads the latest release, verifies its checksum, installs it to
 
 1. Download **Filament.dmg** from the [latest release](https://github.com/akshaymaloo/filament/releases/latest)
    and drag Filament into Applications.
-2. Open Filament. Because the build isn't notarized yet, macOS blocks the
-   first launch — go to **System Settings › Privacy & Security** and click
-   **Open Anyway** (or run `xattr -dr com.apple.quarantine /Applications/Filament.app`).
-3. Opening the app once registers its Quick Look extensions with Finder.
+2. Open Filament once. This registers its Quick Look extensions with Finder.
 
 Builds run on both **Apple silicon and Intel** Macs, macOS 14 or later.
-Notarizing releases needs a paid Apple Developer account — if Filament is
-useful to you, [supporting it on Ko-fi](https://ko-fi.com/akshaymaloo) goes
-toward that.
+Releases are signed with a Developer ID and notarized by Apple.
+
+> Releases before v0.4.0 weren't notarized. If macOS says it can't verify
+> Filament, go to **System Settings › Privacy & Security** and click
+> **Open Anyway**, or update to the latest release.
 
 ## Supported formats & features
 
@@ -69,7 +68,7 @@ Filament adds **Finder thumbnails** and **interactive Quick Look previews**
 - **`.ply`** — ASCII and binary (little/big endian).
 
 <p align="center">
-  <img src="docs/color-preview.gif" width="45%" alt="Interactive full-color 3MF preview spinning in Filament">
+  <img src="docs/images/color-preview.gif" width="45%" alt="Interactive full-color 3MF preview spinning in Filament">
 </p>
 <p align="center"><sub>Multi-material 3MF models render in their real filament colors.</sub></p>
 
@@ -265,32 +264,8 @@ extensions system-wide.
 
 ## Development
 
-`ThreeMFKit` is a dependency-free Swift package and can be built and tested
-with the Swift toolchain alone:
-
-```bash
-swift build                     # build the library
-swift run three-mf-validate     # self-contained validation suite (no XCTest needed)
-swift test                      # XCTest: parsing, golden fixtures, render and performance guards
-swift test --enable-code-coverage && scripts/check-coverage.sh   # fails below 85% line coverage
-```
-
-### Architecture
-
-- **`ThreeMFKit`** (`Sources/ThreeMFKit`) — dependency-free core: a read-only
-  ZIP reader (via the `Compression` framework), OPC / 3MF XML parsing
-  including the Production Extension, STL/OBJ/PLY mesh parsing, a
-  `ModelLoader` facade that dispatches by file type, plate/thumbnail/stat
-  extraction, and SceneKit scene construction (`ModelSCNView`, cameras,
-  lighting, shadows).
-- **`Filament`** (`App/Filament`) — the SwiftUI host app. Opens or drops a
-  model file and browses build plates interactively. Declares the custom
-  `com.filament3d.3mf` UTI and embeds both Quick Look extensions.
-- **`ThumbnailExtension`** (`Extensions/ThumbnailExtension`) — a
-  `QLThumbnailProvider` app extension for Finder/Spotlight thumbnails.
-- **`PreviewExtension`** (`Extensions/PreviewExtension`) — a
-  `QLPreviewingController` app extension for the full Space-bar preview
-  panel.
+See [CONTRIBUTING.md](CONTRIBUTING.md) for the dev setup, test/coverage
+commands, project architecture, and the release process.
 
 ### Uniform Type Identifiers
 
@@ -307,21 +282,10 @@ extensions also claim it. The preview and thumbnail extensions therefore list
 the common third-party 3MF UTIs in `QLSupportedContentTypes` in addition to
 `com.filament3d.3mf`.
 
-### Releasing
-
-1. Bump `MARKETING_VERSION` in `project.yml`.
-2. Optionally add release notes at `docs/release-notes/vX.Y.Z.md`.
-3. Push a tag: `git tag vX.Y.Z && git push origin vX.Y.Z`.
-
-`.github/workflows/release.yml` then builds a universal, ad-hoc-signed
-`Filament.app`, packages it into `Filament.zip` / `Filament.dmg` /
-`SHA256SUMS.txt`, and opens a **draft** GitHub release for review.
-
 ## Contributing
 
-Issues and pull requests are welcome. Please keep `ThreeMFKit` dependency-free,
-and make sure `swift run three-mf-validate` and `swift build` pass before
-opening a PR (CI runs these plus an Xcode build on every push).
+Issues and pull requests are welcome — see [CONTRIBUTING.md](CONTRIBUTING.md)
+for dev setup and the PR checklist.
 
 ## Support
 
@@ -330,10 +294,9 @@ development:
 
 <a href="https://ko-fi.com/akshaymaloo"><img src="https://ko-fi.com/img/githubbutton_sm.svg" alt="Support me on Ko-fi" height="36"></a>
 
-Releases today are **ad-hoc "signed to run locally"**, so macOS shows a
-Gatekeeper warning on first launch. Donations go toward an **Apple Developer
-Program** membership so future releases can be **notarized** — no Gatekeeper
-warnings — and, eventually, published on the **Mac App Store**. Thank you! 🙏
+Donations cover the **Apple Developer Program** membership that keeps
+releases signed and notarized, and help toward a future **Mac App Store**
+release. Thank you! 🙏
 
 ## License
 

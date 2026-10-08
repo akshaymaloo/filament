@@ -20,7 +20,7 @@ settings:
       SWIFT_ACTIVE_COMPILATION_CONDITIONS: DEBUG
 
 packages:
-  ThreeMFKit:
+  Filament:
     path: .
 
 targets:
@@ -30,8 +30,8 @@ targets:
     sources:
       - path: App/Filament
     dependencies:
-      - package: ThreeMFKit
-        product: ThreeMFKit
+      - package: Filament
+        product: FilamentKit
       - target: ThumbnailExtension
         embed: true
       - target: PreviewExtension
@@ -51,8 +51,8 @@ targets:
     sources:
       - path: Extensions/ThumbnailExtension
     dependencies:
-      - package: ThreeMFKit
-        product: ThreeMFKit
+      - package: Filament
+        product: FilamentKit
     settings:
       base:
         INFOPLIST_FILE: Extensions/ThumbnailExtension/Info.plist
@@ -66,8 +66,8 @@ targets:
     sources:
       - path: Extensions/PreviewExtension
     dependencies:
-      - package: ThreeMFKit
-        product: ThreeMFKit
+      - package: Filament
+        product: FilamentKit
     settings:
       base:
         INFOPLIST_FILE: Extensions/PreviewExtension/Info.plist

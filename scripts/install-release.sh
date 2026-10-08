@@ -162,8 +162,8 @@ main() {
   osascript -e 'tell application "Filament" to quit' >/dev/null 2>&1 || true
   rm -rf "$INSTALL_DIR/$APP_NAME"
   ditto "$TMP_DIR/$APP_NAME" "$INSTALL_DIR/$APP_NAME"
-  # Downloaded files carry a quarantine flag; the app is ad-hoc signed (not
-  # notarized), so remove it ourselves after the user has chosen to install.
+  # Releases before v0.4.0 are ad-hoc signed (not notarized), so drop the
+  # quarantine flag the user would otherwise have to clear by hand.
   xattr -dr com.apple.quarantine "$INSTALL_DIR/$APP_NAME" 2>/dev/null || true
   info "Installed $INSTALL_DIR/$APP_NAME"
   if [ -d "/Applications/$APP_NAME" ]; then

@@ -1,9 +1,9 @@
 import AppKit
 import SwiftUI
-import ThreeMFKit
+import FilamentKit
 
 /// Small formatting helpers shared by the info panel and plate overlays.
-/// Thin wrapper around `ThreeMFKit.PrintStatsFormatting`, so the app and the
+/// Thin wrapper around `FilamentKit.PrintStatsFormatting`, so the app and the
 /// Quick Look preview extension render byte-identical text.
 enum PrintStatsFormatter {
     static func duration(seconds: Int) -> String {

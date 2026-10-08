@@ -12,7 +12,7 @@ concurrency:
 
 jobs:
   core:
-    name: ThreeMFKit (SwiftPM)
+    name: FilamentKit (SwiftPM)
     # macOS 15 ships Xcode 16, which can read the project format XcodeGen
     # generates (objectVersion 77 requires Xcode 16+).
     runs-on: macos-15
@@ -24,10 +24,10 @@ jobs:
           xcode-version: latest-stable
       - name: Show toolchain
         run: swift --version
-      - name: Build ThreeMFKit
+      - name: Build FilamentKit
         run: swift build
       - name: Run validation suite
-        run: swift run three-mf-validate
+        run: swift run filament-validate
       - name: Run XCTest suite
         run: swift test --enable-code-coverage
       - name: Check coverage floor

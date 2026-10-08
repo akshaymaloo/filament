@@ -1,7 +1,7 @@
 import Cocoa
 import Quartz
 import SceneKit
-import ThreeMFKit
+import FilamentKit
 import os.lock
 
 /// A minimal thread-safe cancellation flag: `preparePreviewOfFile` parses
@@ -34,7 +34,7 @@ final class PreviewViewController: NSViewController, QLPreviewingController {
     private let fileNameLabel = NSTextField(labelWithString: "")
     private let plateControl = NSSegmentedControl()
 
-    private var document: ThreeMFDocument?
+    private var document: ModelDocument?
     private var url: URL?
     private var useModelColors = true
     private var currentPlateIndex = 0

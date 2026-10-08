@@ -49,8 +49,63 @@ jobs:
       - name: Install XcodeGen
         run: brew install xcodegen
 
+      # Developer ID signing + notarization are enabled when these repository
+      # secrets exist; without them (e.g. on forks) the build is ad-hoc signed.
+      #   MACOS_CERTIFICATE_P12_BASE64  base64 of the exported "Developer ID Application" .p12
+      #   MACOS_CERTIFICATE_PASSWORD    password of that .p12
+      #   NOTARY_KEY_P8_BASE64          base64 of the App Store Connect API key (.p8)
+      #   NOTARY_KEY_ID / NOTARY_ISSUER_ID
+      - name: Import Developer ID certificate
+        id: signing
+        env:
+          CERT_P12_BASE64: ${{ secrets.MACOS_CERTIFICATE_P12_BASE64 }}
+          CERT_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+          NOTARY_KEY_P8_BASE64: ${{ secrets.NOTARY_KEY_P8_BASE64 }}
+        run: |
+          if [ -z "$CERT_P12_BASE64" ]; then
+            echo "::warning::No signing certificate secret; building ad-hoc (Gatekeeper will warn users)."
+            exit 0
+          fi
+          KEYCHAIN="$RUNNER_TEMP/signing.keychain-db"
+          KEYCHAIN_PASSWORD="$(uuidgen)"
+          echo "$CERT_P12_BASE64" | base64 --decode > "$RUNNER_TEMP/cert.p12"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security import "$RUNNER_TEMP/cert.p12" -P "$CERT_PASSWORD" -A -t cert -f pkcs12 -k "$KEYCHAIN"
+          security set-key-partition-list -S apple-tool:,apple: -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN" >/dev/null
+          security list-keychains -d user -s "$KEYCHAIN" $(security list-keychains -d user | tr -d '"')
+          rm -f "$RUNNER_TEMP/cert.p12"
+          IDENTITY="$(security find-identity -v -p codesigning "$KEYCHAIN" | sed -n 's/.*"\(Developer ID Application: .*\)"/\1/p' | head -1)"
+          if [ -z "$IDENTITY" ]; then
+            echo "::error::The certificate secret does not contain a Developer ID Application identity."
+            exit 1
+          fi
+          echo "Signing with: $IDENTITY"
+          echo "identity=$IDENTITY" >> "$GITHUB_OUTPUT"
+          echo "keychain=$KEYCHAIN" >> "$GITHUB_OUTPUT"
+          if [ -n "$NOTARY_KEY_P8_BASE64" ]; then
+            echo "$NOTARY_KEY_P8_BASE64" | base64 --decode > "$RUNNER_TEMP/notary.p8"
+            echo "notary_key=$RUNNER_TEMP/notary.p8" >> "$GITHUB_OUTPUT"
+          else
+            echo "::warning::No notarization key secret; the build will be signed but not notarized."
+          fi
+
       - name: Build and package
+        env:
+          SIGN_IDENTITY: ${{ steps.signing.outputs.identity }}
+          NOTARY_KEY_PATH: ${{ steps.signing.outputs.notary_key }}
+          NOTARY_KEY_ID: ${{ secrets.NOTARY_KEY_ID }}
+          NOTARY_ISSUER_ID: ${{ secrets.NOTARY_ISSUER_ID }}
         run: scripts/package-release.sh dist
+
+      - name: Remove signing material
+        if: always()
+        run: |
+          if [ -n "${{ steps.signing.outputs.keychain }}" ]; then
+            security delete-keychain "${{ steps.signing.outputs.keychain }}" || true
+          fi
+          rm -f "$RUNNER_TEMP/notary.p8" "$RUNNER_TEMP/cert.p12"
 
       - name: Upload dist as workflow artifact
         uses: actions/upload-artifact@v4

@@ -1,6 +1,6 @@
 import SwiftUI
 import SceneKit
-import ThreeMFKit
+import FilamentKit
 
 /// Wraps an `SCNView` configured for interactive orbit/pan/zoom of a build plate.
 struct SceneKitView: NSViewRepresentable {

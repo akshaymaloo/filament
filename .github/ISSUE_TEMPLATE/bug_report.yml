@@ -1,0 +1,76 @@
+name: Bug report
+description: Something isn't working as expected
+labels: ["bug"]
+body:
+  - type: textarea
+    id: description
+    attributes:
+      label: What happened?
+      description: A clear description of the bug, and what you expected instead.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: surface
+    attributes:
+      label: Where did this happen?
+      options:
+        - Quick Look preview (Space bar)
+        - Finder thumbnail
+        - Filament app
+        - Other / not sure
+    validations:
+      required: true
+
+  - type: input
+    id: macos-version
+    attributes:
+      label: macOS version
+      placeholder: e.g. macOS 15.1 (Sequoia)
+    validations:
+      required: true
+
+  - type: input
+    id: filament-version
+    attributes:
+      label: Filament version
+      description: Shown in the app's About window, or your downloaded release/tag.
+      placeholder: e.g. 0.3.0
+    validations:
+      required: true
+
+  - type: input
+    id: file-type
+    attributes:
+      label: File type and exporter/slicer
+      description: Which format, and which app produced the file (if known)?
+      placeholder: e.g. .3mf exported from Bambu Studio / OrcaSlicer / Shapr3D / OnShape
+    validations:
+      required: false
+
+  - type: input
+    id: uti
+    attributes:
+      label: File's content type (UTI)
+      description: |
+        Run `mdls -name kMDItemContentType the-file.3mf` (or your file's extension) in Terminal and paste the output.
+      placeholder: kMDItemContentType = "com.filament3d.3mf"
+    validations:
+      required: false
+
+  - type: textarea
+    id: sample-file
+    attributes:
+      label: Sample file
+      description: |
+        If possible, attach (drag and drop) the file that triggers the problem, or a minimal reproduction. Most parsing bugs are hard to fix without one.
+    validations:
+      required: false
+
+  - type: textarea
+    id: extra
+    attributes:
+      label: Anything else?
+      description: Logs, screenshots, or other context.
+    validations:
+      required: false

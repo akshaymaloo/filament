@@ -1,6 +1,6 @@
 import SwiftUI
 import AppKit
-import ThreeMFKit
+import FilamentKit
 
 struct ContentView: View {
     @EnvironmentObject private var model: DocumentModel
@@ -78,7 +78,7 @@ private struct DropZoneView: View {
 
 /// Main split view shown once a document has finished loading.
 private struct LoadedDocumentView: View {
-    let document: ThreeMFDocument
+    let document: ModelDocument
     @EnvironmentObject private var model: DocumentModel
     @Environment(\.colorScheme) private var colorScheme
     @State private var useModelColors = true
