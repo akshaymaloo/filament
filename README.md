@@ -33,7 +33,11 @@ in the app.
 
 ## Download
 
-**Recommended — one line, no Xcode required.** Open Terminal and run:
+**Download a ready-to-use, signed copy. No need to build it yourself.**
+Every release is signed with a Developer ID and notarized by Apple, so it
+opens like any other Mac app: no Xcode, no security warnings.
+
+**Recommended — one line.** Open Terminal and run:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/akshaymaloo/filament/main/scripts/install-release.sh | bash
@@ -49,7 +53,6 @@ This downloads the latest release, verifies its checksum, installs it to
 2. Open Filament once. This registers its Quick Look extensions with Finder.
 
 Builds run on both **Apple silicon and Intel** Macs, macOS 14 or later.
-Releases are signed with a Developer ID and notarized by Apple.
 
 > Releases before v0.4.0 weren't notarized. If macOS says it can't verify
 > Filament, go to **System Settings › Privacy & Security** and click
@@ -161,7 +164,8 @@ triangles, and the Filament app handles even larger ones.
 
 ## Build from source
 
-Building from source requires **Xcode 15 or later** and
+Most people don't need this: the [signed download](#download) is the
+easiest way to install. Building from source requires **Xcode 15 or later** and
 **[XcodeGen](https://github.com/yonaskolb/XcodeGen)** (`brew install xcodegen`);
 the Xcode project is generated from `project.yml` and isn't checked in.
 

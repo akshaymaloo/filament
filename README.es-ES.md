@@ -34,7 +34,12 @@ aplicación.
 
 ## Descarga
 
-**Recomendado — una sola línea, sin necesidad de Xcode.** Abre Terminal y
+**Descarga una copia firmada y lista para usar. No necesitas compilarla tú
+mismo.** Cada versión está firmada con un Developer ID y notarizada por Apple,
+así que se abre como cualquier otra app de Mac: sin Xcode y sin avisos de
+seguridad.
+
+**Recomendado — una sola línea.** Abre Terminal y
 ejecuta:
 
 ```bash
@@ -52,8 +57,7 @@ Esto descarga la última versión, verifica su checksum, la instala en
    Finder.
 
 Las compilaciones funcionan en Mac con **Apple silicon e Intel**, macOS 14 o
-posterior. Las versiones están firmadas con un Developer ID y notarizadas por
-Apple.
+posterior.
 
 > Las versiones anteriores a la v0.4.0 no estaban notarizadas. Si macOS dice
 > que no puede verificar Filament, ve a **Ajustes del Sistema › Privacidad y
@@ -177,7 +181,8 @@ app Filament admite modelos aún más grandes.
 
 ## Compilar desde el código fuente
 
-Compilar desde el código fuente requiere **Xcode 15 o posterior** y
+La mayoría de la gente no lo necesita: la [descarga firmada](#descarga) es la
+forma más fácil de instalarla. Compilar desde el código fuente requiere **Xcode 15 o posterior** y
 **[XcodeGen](https://github.com/yonaskolb/XcodeGen)** (`brew install xcodegen`);
 el proyecto de Xcode se genera desde `project.yml` y no está incluido en el
 repositorio.
