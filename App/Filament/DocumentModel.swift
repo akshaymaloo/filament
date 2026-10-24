@@ -63,7 +63,7 @@ final class DocumentModel: ObservableObject {
                     return
                 }
                 self.document = doc
-                self.selectedPlateIndex = 0
+                self.selectedPlateIndex = doc.defaultPlateIndex
                 self.fileURL = url
                 self.loadGeneration += 1
                 self.isLoading = false

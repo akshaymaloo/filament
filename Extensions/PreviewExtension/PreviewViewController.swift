@@ -258,7 +258,7 @@ final class PreviewViewController: NSViewController, QLPreviewingController {
         }
         plateControl.isHidden = plates.count <= 1
         if !plates.isEmpty {
-            plateControl.selectedSegment = plates.firstIndex { $0.mesh.triangleCount > 0 } ?? 0
+            plateControl.selectedSegment = document?.defaultPlateIndex ?? 0
         }
     }
 

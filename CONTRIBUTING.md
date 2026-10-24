@@ -60,7 +60,7 @@ with the Swift toolchain alone, without opening Xcode:
 swift build                      # build the library
 swift run filament-validate      # self-contained validation suite (no XCTest needed)
 swift test                       # XCTest: parsing, golden fixtures, render and performance guards
-swift test --enable-code-coverage && scripts/check-coverage.sh   # fails below 85% line coverage
+swift test --enable-code-coverage && scripts/check-coverage.sh   # fails below 90% line coverage
 ```
 
 `scripts/check-coverage.sh` measures line coverage for `FilamentKit` only —

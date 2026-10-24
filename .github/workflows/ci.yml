@@ -31,7 +31,7 @@ jobs:
       - name: Run XCTest suite
         run: swift test --enable-code-coverage
       - name: Check coverage floor
-        run: scripts/check-coverage.sh 85
+        run: scripts/check-coverage.sh 90
 
   app:
     name: App + Quick Look extensions (xcodebuild)

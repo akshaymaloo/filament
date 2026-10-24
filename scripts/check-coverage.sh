@@ -2,13 +2,13 @@
 # Fails CI if FilamentKit's XCTest line coverage drops below a threshold.
 #
 # Usage: scripts/check-coverage.sh [threshold]
-#   threshold - minimum acceptable TOTAL line-coverage percentage (default 85)
+#   threshold - minimum acceptable TOTAL line-coverage percentage (default 90)
 #
 # Requires the test binary and profile data to already exist, i.e. run
 # `swift test --enable-code-coverage` first.
 set -euo pipefail
 
-threshold="${1:-85}"
+threshold="${1:-90}"
 
 bin_path="$(swift build --show-bin-path)"
 profdata="${bin_path}/codecov/default.profdata"

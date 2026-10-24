@@ -96,4 +96,10 @@ extension ModelDocument {
     public var hasNoGeometry: Bool {
         plates.allSatisfy { $0.mesh.triangleCount == 0 }
     }
+
+    /// Index of the plate to show first: the first plate with geometry, or 0
+    /// when none has any.
+    public var defaultPlateIndex: Int {
+        plates.firstIndex { $0.mesh.triangleCount > 0 } ?? 0
+    }
 }

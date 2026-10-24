@@ -43,6 +43,13 @@ semantic versioning.
 - Added `CONTRIBUTING.md`, `SECURITY.md`, issue/PR templates, and an
   `.editorconfig`; moved README images into `docs/images/`.
 
+### Tests
+
+- Regression tests for the bundled sample model, Info.plist/project.yml
+  consistency (Quick Look content types, extension points, versions),
+  user-facing error copy, end-to-end load-failure classification and default
+  plate selection; the coverage floor is now 90%.
+
 ## [0.3.0] - 2026-09-29
 
 ### Added
