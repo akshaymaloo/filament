@@ -1,6 +1,8 @@
 import SwiftUI
 import AppKit
 import Quartz
+import UniformTypeIdentifiers
+import FilamentKit
 
 enum SetupWindow {
     static let id = "quicklook-setup"
@@ -40,9 +42,9 @@ struct SetupView: View {
     @Environment(\.dismiss) private var dismiss
     @AppStorage(SetupWindow.completedKey) private var hasCompletedOnboarding = false
 
-    private var isMacOS26OrLater: Bool {
-        ProcessInfo.processInfo.isOperatingSystemAtLeast(OperatingSystemVersion(majorVersion: 26, minorVersion: 0, patchVersion: 0))
-    }
+    @State private var defaultsStatus = DefaultAppStatus.current()
+    @State private var defaultsError: String?
+    @State private var copied = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -69,14 +71,31 @@ struct SetupView: View {
                     }
                 }
                 Section {
+                    DefaultAppRow(status: defaultsStatus, error: defaultsError) { makeDefault() }
+                    if #available(macOS 26, *) {
+                        StepRow(
+                            symbol: "terminal",
+                            title: "Use Filament for STL, OBJ, and PLY previews",
+                            detail: "macOS’s built-in viewer previews these formats first. To use Filament instead, copy the command, paste it into Terminal, and press Return. (Sandboxed apps can’t change this setting themselves.)",
+                            buttonTitle: copied ? "Copied" : "Copy Command",
+                            secondaryTitle: "Open Terminal",
+                            action: copyCommand,
+                            secondaryAction: openTerminal
+                        )
+                    }
+                }
+                Section {
                     DisclosureGroup("Still not working?") {
                         VStack(alignment: .leading, spacing: 8) {
                             Text("• Keep only one copy of Filament. Remove duplicates from Applications and ~/Applications.")
                             Text("• Open Filament once after updating so macOS registers the new extensions.")
-                            if isMacOS26OrLater {
-                                Text("• macOS 26 and later preview STL, OBJ, and PLY files with Apple’s built-in viewer by default. Filament always handles 3MF.")
+                            if #available(macOS 26, *) {
+                                Text("• To go back to Apple’s viewer for STL, OBJ, and PLY, run this in Terminal:")
+                                Text(QuickLookSetup.restoreAppleCommand)
+                                    .font(.system(.caption, design: .monospaced))
+                                    .textSelection(.enabled)
                                 if let url = URL(string: "https://github.com/akshaymaloo/filament#stlobjply-previews-on-macos-26") {
-                                    Link("Use Filament for STL, OBJ, and PLY", destination: url)
+                                    Link("Read more about STL, OBJ, and PLY previews", destination: url)
                                 }
                             }
                         }
@@ -98,8 +117,48 @@ struct SetupView: View {
             .padding(.horizontal, 20)
             .padding(.bottom, 20)
         }
-        .frame(width: 520, height: 640)
+        .frame(width: 520, height: 720)
         .onDisappear { hasCompletedOnboarding = true }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+            defaultsStatus = .current()
+        }
+    }
+
+    private func makeDefault() {
+        defaultsError = nil
+        let appURL = Bundle.main.bundleURL
+        let ownID = Bundle.main.bundleIdentifier ?? ""
+        let pending = QuickLookSetup.extensionsNeedingChange(defaults: defaultsStatus.defaults, ownBundleID: ownID)
+        let group = DispatchGroup()
+        var failures: [String] = []
+        for ext in pending {
+            guard let type = DefaultAppStatus.type(for: ext) else { continue }
+            group.enter()
+            NSWorkspace.shared.setDefaultApplication(at: appURL, toOpen: type) { error in
+                DispatchQueue.main.async {
+                    if let error { failures.append(error.localizedDescription) }
+                    group.leave()
+                }
+            }
+        }
+        group.notify(queue: .main) {
+            defaultsStatus = .current()
+            if let first = failures.first {
+                defaultsError = "Couldn’t change the default app: \(first)"
+            }
+        }
+    }
+
+    private func copyCommand() {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(QuickLookSetup.preferFilamentCommand, forType: .string)
+        copied = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2) { copied = false }
+    }
+
+    private func openTerminal() {
+        guard let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.apple.Terminal") else { return }
+        NSWorkspace.shared.openApplication(at: url, configuration: NSWorkspace.OpenConfiguration())
     }
 
     private var header: some View {
@@ -127,7 +186,9 @@ private struct StepRow: View {
     let title: String
     let detail: String
     let buttonTitle: String
+    var secondaryTitle: String?
     let action: () -> Void
+    var secondaryAction: (() -> Void)?
 
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
@@ -142,8 +203,88 @@ private struct StepRow: View {
                     .font(.callout)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
-                Button(buttonTitle, action: action)
-                    .padding(.top, 4)
+                HStack {
+                    Button(buttonTitle, action: action)
+                    if let secondaryTitle, let secondaryAction {
+                        Button(secondaryTitle, action: secondaryAction)
+                    }
+                }
+                .padding(.top, 4)
+            }
+        }
+        .padding(.vertical, 4)
+    }
+}
+
+/// Current default app (by bundle ID and display name) for each file type.
+struct DefaultAppStatus {
+    var defaults: [String: String?]
+    var names: [String: String]
+
+    static func type(for ext: String) -> UTType? {
+        ext == "3mf" ? (UTType("com.filament3d.3mf") ?? UTType(filenameExtension: ext)) : UTType(filenameExtension: ext)
+    }
+
+    static func current() -> DefaultAppStatus {
+        var defaults: [String: String?] = [:]
+        var names: [String: String] = [:]
+        for ext in QuickLookSetup.supportedExtensions {
+            guard let type = type(for: ext),
+                  let url = NSWorkspace.shared.urlForApplication(toOpen: type),
+                  let id = Bundle(url: url)?.bundleIdentifier else {
+                defaults[ext] = .some(nil)
+                continue
+            }
+            defaults[ext] = .some(id)
+            names[id] = FileManager.default.displayName(atPath: url.path)
+                .replacingOccurrences(of: ".app", with: "")
+        }
+        return DefaultAppStatus(defaults: defaults, names: names)
+    }
+
+    var ownID: String { Bundle.main.bundleIdentifier ?? "" }
+
+    var isAllFilament: Bool {
+        QuickLookSetup.extensionsNeedingChange(defaults: defaults, ownBundleID: ownID).isEmpty
+    }
+
+    var text: String {
+        QuickLookSetup.statusText(defaults: defaults, ownBundleID: ownID, appNames: names)
+    }
+}
+
+private struct DefaultAppRow: View {
+    let status: DefaultAppStatus
+    let error: String?
+    let action: () -> Void
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 12) {
+            Image(systemName: "doc.badge.gearshape")
+                .font(.system(size: 17))
+                .foregroundStyle(.tint)
+                .frame(width: 24)
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Open 3D files with Filament").font(.headline)
+                if status.isAllFilament {
+                    Label(status.text, systemImage: "checkmark.circle.fill")
+                        .font(.callout)
+                        .foregroundStyle(.green)
+                } else {
+                    Text(status.text)
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Button("Make Filament the Default App", action: action)
+                        .padding(.top, 4)
+                }
+                if let error {
+                    Text(error)
+                        .font(.callout)
+                        .foregroundStyle(.red)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
             }
         }
         .padding(.vertical, 4)

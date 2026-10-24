@@ -103,7 +103,9 @@ para:
 - **Abre por defecto.** `install.sh` establece Filament como la aplicación
   predeterminada para `.3mf` y `.stl` (omítelo con `--no-defaults`). Con la
   versión descargada, selecciona un archivo en Finder, pulsa ⌘I y elige
-  **Abrir con › Filament › Cambiar todo**.
+  **Abrir con › Filament › Cambiar todo**. También puedes usar la ventana de
+  configuración (Ayuda › Quick Look Setup…): **Make Filament the Default App**
+  lo hace para 3MF, STL, OBJ y PLY con un clic.
 - **Respetuoso con la privacidad y fuera de línea.** Todo se ejecuta
   localmente: sin red, sin telemetría.
 
@@ -123,6 +125,15 @@ curl -fsSL https://raw.githubusercontent.com/akshaymaloo/filament/main/scripts/i
 # o, compilando desde el código fuente
 ./install.sh --prefer-filament-stl
 ./install.sh --restore-apple-stl     # deshacer
+```
+
+La ventana de configuración de la app (Ayuda › Quick Look Setup…) también
+muestra este paso en macOS 26+ con un botón **Copy Command**. Filament está en
+un sandbox y no puede ejecutarlo por ti, así que pégalo tú en Terminal:
+
+```bash
+pluginkit -e ignore -i com.apple.HydraQLPreviewExtension && qlmanage -r
+pluginkit -e default -i com.apple.HydraQLPreviewExtension && qlmanage -r   # deshacer
 ```
 
 Esto ejecuta `pluginkit -e ignore -i com.apple.HydraQLPreviewExtension`, un

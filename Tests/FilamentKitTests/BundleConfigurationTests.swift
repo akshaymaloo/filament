@@ -1,4 +1,5 @@
 import XCTest
+@testable import FilamentKit
 
 /// Keeps the app, the Quick Look extensions and project.yml consistent. These
 /// targets aren't built by SwiftPM, so they are checked from their sources.
@@ -46,6 +47,23 @@ final class BundleConfigurationTests: XCTestCase {
             XCTAssertEqual(types.count, Set(types).count, "duplicate types in \(path)")
             XCTAssertEqual(Set(types).subtracting(app), [], "\(path) lists types the app doesn’t know")
             XCTAssertEqual(app.subtracting(types), [], "\(path) is missing types the app declares")
+        }
+    }
+
+    func testAppDeclaresAllSetupFileTypes() throws {
+        let info = try plist("App/Filament/Info.plist")
+        let imported = info["UTImportedTypeDeclarations"] as? [[String: Any]] ?? []
+        var exts = Set<String>()
+        for decl in imported {
+            let tags = decl["UTTypeTagSpecification"] as? [String: Any]
+            exts.formUnion(tags?["public.filename-extension"] as? [String] ?? [])
+        }
+        let system = ["stl": "public.standard-tesselated-geometry-format",
+                      "obj": "public.geometry-definition-format",
+                      "ply": "public.polygon-file-format"]
+        let types = try appTypes()
+        for ext in QuickLookSetup.supportedExtensions {
+            if let id = system[ext] { XCTAssertTrue(types.contains(id), ext) } else { XCTAssertTrue(exts.contains(ext), ext) }
         }
     }
 

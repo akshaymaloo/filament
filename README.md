@@ -93,6 +93,8 @@ Filament adds **Finder thumbnails** and **interactive Quick Look previews**
 - **Default opener.** `install.sh` makes Filament the default app for `.3mf`
   and `.stl` (skip with `--no-defaults`). For a downloaded build, select a
   file in Finder, press ⌘I and choose **Open with › Filament › Change All**.
+  Or use the setup window (Help › Quick Look Setup…): **Make Filament the
+  Default App** does it for 3MF, STL, OBJ, and PLY in one click.
 - **Privacy-friendly & offline.** Everything runs locally — no network, no
   telemetry.
 
@@ -111,6 +113,15 @@ curl -fsSL https://raw.githubusercontent.com/akshaymaloo/filament/main/scripts/i
 # or, building from source
 ./install.sh --prefer-filament-stl
 ./install.sh --restore-apple-stl     # undo
+```
+
+The in-app setup window (Help › Quick Look Setup…) also shows this step on
+macOS 26+ with a **Copy Command** button. Filament is sandboxed and can't run
+it for you, so paste it into Terminal yourself:
+
+```bash
+pluginkit -e ignore -i com.apple.HydraQLPreviewExtension && qlmanage -r
+pluginkit -e default -i com.apple.HydraQLPreviewExtension && qlmanage -r   # undo
 ```
 
 This runs `pluginkit -e ignore -i com.apple.HydraQLPreviewExtension` — a

@@ -10,6 +10,10 @@ semantic versioning.
 
 ### Added
 
+- The setup window can now make Filament the default app for 3MF, STL, OBJ,
+  and PLY (with live status), and on macOS 26+ offers a copyable Terminal
+  command (plus Open Terminal) to switch Apple's built-in 3D preview off so
+  Filament previews STL, OBJ, and PLY. The logic lives in `QuickLookSetup`.
 - A "Couldn't Preview" state in Quick Look (and in the app) for files that
   fail to load or contain no geometry, with plain-English explanations and an
   "Open in Filament" button for models too large to preview, instead of a
