@@ -8,12 +8,10 @@ semantic versioning.
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-10-24
+
 ### Added
 
-- The setup window can now make Filament the default app for 3MF, STL, OBJ,
-  and PLY (with live status), and on macOS 26+ offers a copyable Terminal
-  command (plus Open Terminal) to switch Apple's built-in 3D preview off so
-  Filament previews STL, OBJ, and PLY. The logic lives in `QuickLookSetup`.
 - A "Couldn't Preview" state in Quick Look (and in the app) for files that
   fail to load or contain no geometry, with plain-English explanations and an
   "Open in Filament" button for models too large to preview, instead of a
@@ -22,10 +20,10 @@ semantic versioning.
   Look Setup…) with a bundled multi-color sample model, a Quick Look preview
   self-test and a shortcut to System Settings › Extensions. The sample is
   regenerated with `scripts/make-sample-model.sh`.
-- Release pipeline support for Developer ID signing (hardened runtime,
-  secure timestamp) and notarization with stapling for both the app and the
-  DMG. `scripts/set-release-secrets.sh` configures the GitHub secrets; builds
-  without secrets (e.g. forks) fall back to ad-hoc signing.
+- The setup window can now make Filament the default app for 3MF, STL, OBJ,
+  and PLY (with live status), and on macOS 26+ offers a copyable Terminal
+  command (plus Open Terminal) to switch Apple's built-in 3D preview off so
+  Filament previews STL, OBJ, and PLY. The logic lives in `QuickLookSetup`.
 
 ### Changed
 
@@ -36,6 +34,25 @@ semantic versioning.
   (`LoadFailureMessage`) instead of developer-facing descriptions.
 - The thumbnail extension now reports an error for models with no geometry so
   Finder keeps the generic icon.
+
+### Tests
+
+- Regression tests for the bundled sample model, Info.plist/project.yml
+  consistency (Quick Look content types, extension points, versions),
+  user-facing error copy, end-to-end load-failure classification and default
+  plate selection; the coverage floor is now 90%.
+
+## [0.4.0] - 2026-10-08
+
+### Added
+
+- Release pipeline support for Developer ID signing (hardened runtime,
+  secure timestamp) and notarization with stapling for both the app and the
+  DMG. `scripts/set-release-secrets.sh` configures the GitHub secrets; builds
+  without secrets (e.g. forks) fall back to ad-hoc signing.
+
+### Changed
+
 - Repository restructure for open-source readability: the SwiftPM package and
   library target were renamed `ThreeMFKit` → **`FilamentKit`** (product
   `three-mf-validate` → **`filament-validate`**), and format-agnostic public
@@ -49,13 +66,6 @@ semantic versioning.
   no longer link it.
 - Added `CONTRIBUTING.md`, `SECURITY.md`, issue/PR templates, and an
   `.editorconfig`; moved README images into `docs/images/`.
-
-### Tests
-
-- Regression tests for the bundled sample model, Info.plist/project.yml
-  consistency (Quick Look content types, extension points, versions),
-  user-facing error copy, end-to-end load-failure classification and default
-  plate selection; the coverage floor is now 90%.
 
 ## [0.3.0] - 2026-09-29
 
@@ -137,7 +147,9 @@ semantic versioning.
   `.stl`.
 - Fully local and offline — no network access, no telemetry.
 
-[Unreleased]: https://github.com/akshaymaloo/filament/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/akshaymaloo/filament/compare/v0.4.1...HEAD
+[0.4.1]: https://github.com/akshaymaloo/filament/compare/v0.4.0...v0.4.1
+[0.4.0]: https://github.com/akshaymaloo/filament/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/akshaymaloo/filament/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/akshaymaloo/filament/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/akshaymaloo/filament/releases/tag/v0.1.0
