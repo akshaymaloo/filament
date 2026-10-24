@@ -41,6 +41,7 @@ let supportedTypes: [UTType] = {
 @main
 struct FilamentApp: App {
     @StateObject private var model = DocumentModel()
+    @Environment(\.openWindow) private var openWindow
 
     var body: some Scene {
         WindowGroup {
@@ -50,7 +51,7 @@ struct FilamentApp: App {
                 // Load files opened from Finder (double-click / "Open With"),
                 // since Filament is a registered viewer for these types.
                 .onOpenURL { url in
-                    model.load(url: url)
+                    model.open(url: url)
                 }
         }
         .defaultSize(width: 960, height: 640)
@@ -60,6 +61,11 @@ struct FilamentApp: App {
                     presentOpenPanel()
                 }
                 .keyboardShortcut("o", modifiers: .command)
+            }
+            CommandGroup(replacing: .help) {
+                Button("Quick Look Setup…") {
+                    openWindow(id: SetupWindow.id, value: SetupWindow.id)
+                }
             }
             CommandGroup(after: .newItem) {
                 Divider()
@@ -79,9 +85,16 @@ struct FilamentApp: App {
                     model.reset()
                 }
                 .keyboardShortcut("w", modifiers: .command)
-                .disabled(model.document == nil && model.errorMessage == nil)
+                .disabled(model.document == nil && model.failure == nil)
             }
         }
+
+        // A value-based group so the window only appears when asked for
+        // (a plain `Window` scene would also open at every launch).
+        WindowGroup("Welcome to Filament", id: SetupWindow.id, for: String.self) { _ in
+            SetupView()
+        }
+        .windowResizability(.contentSize)
     }
 
     /// Presents an `NSOpenPanel` filtered to supported model files and loads the chosen document.

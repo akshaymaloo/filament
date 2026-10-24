@@ -757,3 +757,135 @@ public enum FilamentFixtureFactory {
         return data
     }
 }
+
+// MARK: - Bundled sample model
+
+extension FilamentFixtureFactory {
+    /// The original multi-color sample shipped with the app as
+    /// `Filament Sample.3mf`: a 3D-printer filament spool standing on its rim,
+    /// with white flanges (the object's base extruder) and three bands of
+    /// wound filament painted per triangle with `paint_color` (extruders
+    /// 2–4). Output is deterministic; regenerate with
+    /// `scripts/make-sample-model.sh`.
+    public static func sampleSpool() -> Data {
+        let segments = 56
+        let flangeRadius: Float = 32
+        let boreRadius: Float = 8
+        let barrelRadius: Float = 12
+        let windRadius: Float = 27
+        let flangeThickness: Float = 2.5
+        let width: Float = 36
+
+        var vertices: [(Float, Float, Float)] = []
+        var triangles: [(Int, Int, Int, Int)] = []
+
+        // Adds an annular cylinder along the local z axis, then rotates it so
+        // the spool axis is world Y and the spool rests on the build plate.
+        func addRing(inner: Float, outer: Float, z0: Float, z1: Float, extruderState: Int) {
+            func circle(_ radius: Float, _ z: Float) -> Int {
+                let start = vertices.count
+                for step in 0..<segments {
+                    let angle = 2 * Float.pi * Float(step) / Float(segments)
+                    let x = radius * cos(angle)
+                    let y = radius * sin(angle)
+                    vertices.append((x, -(z - width / 2), y + flangeRadius))
+                }
+                return start
+            }
+            let outerBottom = circle(outer, z0)
+            let outerTop = circle(outer, z1)
+            let innerBottom = circle(inner, z0)
+            let innerTop = circle(inner, z1)
+            for step in 0..<segments {
+                let next = (step + 1) % segments
+                // Outer wall, inner wall, bottom annulus, top annulus.
+                triangles.append((outerBottom + step, outerBottom + next, outerTop + next, extruderState))
+                triangles.append((outerBottom + step, outerTop + next, outerTop + step, extruderState))
+                triangles.append((innerBottom + step, innerTop + next, innerBottom + next, extruderState))
+                triangles.append((innerBottom + step, innerTop + step, innerTop + next, extruderState))
+                triangles.append((outerBottom + step, innerBottom + next, outerBottom + next, extruderState))
+                triangles.append((outerBottom + step, innerBottom + step, innerBottom + next, extruderState))
+                triangles.append((outerTop + step, outerTop + next, innerTop + next, extruderState))
+                triangles.append((outerTop + step, innerTop + next, innerTop + step, extruderState))
+            }
+        }
+
+        let bandEdges: [Float] = [flangeThickness, 14.5, 25, width - flangeThickness]
+        addRing(inner: boreRadius, outer: flangeRadius, z0: 0, z1: flangeThickness, extruderState: 0)
+        addRing(inner: boreRadius, outer: flangeRadius, z0: width - flangeThickness, z1: width, extruderState: 0)
+        addRing(inner: boreRadius, outer: barrelRadius, z0: flangeThickness, z1: width - flangeThickness, extruderState: 0)
+        for band in 0..<3 {
+            addRing(inner: barrelRadius, outer: windRadius, z0: bandEdges[band], z1: bandEdges[band + 1], extruderState: band + 2)
+        }
+
+        // Single-nibble leaf for states 1–2, `<e>C` leaf for state 3 and up;
+        // see `PaintColorDecoder.decode`.
+        func paintColor(for state: Int) -> String? {
+            switch state {
+            case 0: return nil
+            case 1, 2: return String(state << 2, radix: 16, uppercase: true)
+            default: return "\(String(state - 3, radix: 16, uppercase: true))C"
+            }
+        }
+
+        func format(_ value: Float) -> String {
+            let rounded = (value * 1000).rounded() / 1000
+            return rounded == rounded.rounded() ? String(Int(rounded)) : String(rounded)
+        }
+
+        var objectXML = "<object id=\"1\" type=\"model\">\n  <mesh>\n    <vertices>\n"
+        for v in vertices {
+            objectXML += "      <vertex x=\"\(format(v.0))\" y=\"\(format(v.1))\" z=\"\(format(v.2))\"/>\n"
+        }
+        objectXML += "    </vertices>\n    <triangles>\n"
+        for t in triangles {
+            var line = "      <triangle v1=\"\(t.0)\" v2=\"\(t.1)\" v3=\"\(t.2)\""
+            if let paint = paintColor(for: t.3) {
+                line += " paint_color=\"\(paint)\""
+            }
+            objectXML += line + "/>\n"
+        }
+        objectXML += "    </triangles>\n  </mesh>\n</object>\n"
+
+        let modelXML = """
+        <?xml version="1.0" encoding="UTF-8"?>
+        <model unit="millimeter" xmlns="http://schemas.microsoft.com/3dmanufacturing/core/2015/02">
+          <resources>
+        \(objectXML)
+          </resources>
+          <build>
+            <item objectid="1"/>
+          </build>
+        </model>
+        """
+
+        let modelSettingsXML = """
+        <?xml version="1.0" encoding="UTF-8"?>
+        <config>
+          <object id="1">
+            <metadata key="name" value="Filament Spool"/>
+            <metadata key="extruder" value="1"/>
+          </object>
+          <plate>
+            <metadata key="plater_id" value="1"/>
+            <metadata key="plater_name" value="Filament Sample"/>
+            <model_instance>
+              <metadata key="object_id" value="1"/>
+            </model_instance>
+          </plate>
+        </config>
+        """
+
+        let projectSettingsJSON = """
+        {"filament_colour": ["#F4F1EA", "#FF6A3D", "#FFC53D", "#23B5A6"], "filament_type": ["PLA", "PLA", "PLA", "PLA"]}
+        """
+
+        return archive(deflate: true, entries: [
+            ("[Content_Types].xml", Data(contentTypesXML.utf8)),
+            ("_rels/.rels", Data(relsXML(includeThumbnail: false).utf8)),
+            ("3D/3dmodel.model", Data(modelXML.utf8)),
+            ("Metadata/model_settings.config", Data(modelSettingsXML.utf8)),
+            ("Metadata/project_settings.config", Data(projectSettingsJSON.utf8))
+        ])
+    }
+}

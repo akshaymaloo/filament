@@ -5,6 +5,24 @@ import FilamentTestSupport
 import SceneKit
 #endif
 
+// `filament-validate --write-sample <path>` regenerates the bundled sample
+// model (see scripts/make-sample-model.sh) instead of running the checks.
+if let flagIndex = CommandLine.arguments.firstIndex(of: "--write-sample") {
+    guard CommandLine.arguments.indices.contains(flagIndex + 1) else {
+        FileHandle.standardError.write(Data("usage: filament-validate --write-sample <path>\n".utf8))
+        exit(2)
+    }
+    let path = CommandLine.arguments[flagIndex + 1]
+    do {
+        try FilamentFixtureFactory.sampleSpool().write(to: URL(fileURLWithPath: path))
+        print("Wrote \(path)")
+        exit(0)
+    } catch {
+        FileHandle.standardError.write(Data("error: \(error)\n".utf8))
+        exit(1)
+    }
+}
+
 var failureCount = 0
 var checkCount = 0
 

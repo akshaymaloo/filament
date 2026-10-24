@@ -5,6 +5,8 @@ import FilamentKit
 struct ContentView: View {
     @EnvironmentObject private var model: DocumentModel
     @State private var isTargeted = false
+    @Environment(\.openWindow) private var openWindow
+    @AppStorage(SetupWindow.completedKey) private var hasCompletedOnboarding = false
 
     var body: some View {
         Group {
@@ -15,14 +17,25 @@ struct ContentView: View {
                     .controlSize(.large)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
-                DropZoneView(isTargeted: isTargeted, errorMessage: model.errorMessage)
+                DropZoneView(isTargeted: isTargeted, failure: model.failure)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(.background)
+        .task { await presentSetupOnFirstLaunch() }
         .onDrop(of: [.fileURL], isTargeted: $isTargeted) { providers in
             handleDrop(providers: providers)
         }
+    }
+
+    /// Shows the Quick Look setup window once, unless the app was launched to
+    /// open a file. `onOpenURL` can arrive just after the first window
+    /// appears, so give it a moment.
+    private func presentSetupOnFirstLaunch() async {
+        guard !hasCompletedOnboarding, !model.didReceiveOpenRequest else { return }
+        try? await Task.sleep(for: .milliseconds(700))
+        guard !hasCompletedOnboarding, !model.didReceiveOpenRequest, !model.isLoading, model.document == nil else { return }
+        openWindow(id: SetupWindow.id, value: SetupWindow.id)
     }
 
     private func handleDrop(providers: [NSItemProvider]) -> Bool {
@@ -31,7 +44,7 @@ struct ContentView: View {
             guard let url else { return }
             DispatchQueue.main.async {
                 guard ModelFormat(fileExtension: url.pathExtension) != nil else {
-                    model.setUnsupportedFormatError()
+                    model.setUnsupportedFormatError(fileName: url.lastPathComponent)
                     return
                 }
                 model.load(url: url)
@@ -44,25 +57,32 @@ struct ContentView: View {
 /// Empty-state drop zone, shown before a document is loaded.
 private struct DropZoneView: View {
     let isTargeted: Bool
-    let errorMessage: String?
+    let failure: LoadFailureMessage?
+    @Environment(\.openWindow) private var openWindow
 
     var body: some View {
         VStack(spacing: 16) {
-            Image(systemName: "cube.transparent")
-                .font(.system(size: 56, weight: .thin))
-                .foregroundStyle(.secondary)
-            Text("Drop a 3MF, STL, OBJ, or PLY file here")
-                .font(.title2.weight(.medium))
-            Text("or press ⌘O to open")
-                .font(.body)
-                .foregroundStyle(.secondary)
-            if let errorMessage {
-                Text(errorMessage)
+            if let failure {
+                FailureView(message: failure)
+                Text("Drop another file here or press ⌘O to open one.")
                     .font(.callout)
-                    .foregroundStyle(.red)
-                    .multilineTextAlignment(.center)
-                    .padding(.top, 8)
+                    .foregroundStyle(.secondary)
+            } else {
+                Image(systemName: "cube.transparent")
+                    .font(.system(size: 56, weight: .thin))
+                    .foregroundStyle(.secondary)
+                Text("Drop a 3MF, STL, OBJ, or PLY file here")
+                    .font(.title2.weight(.medium))
+                Text("or press ⌘O to open")
+                    .font(.body)
+                    .foregroundStyle(.secondary)
             }
+            Button("Quick Look not working?") {
+                openWindow(id: SetupWindow.id, value: SetupWindow.id)
+            }
+            .buttonStyle(.link)
+            .font(.callout)
+            .padding(.top, 8)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .padding(40)
@@ -73,6 +93,31 @@ private struct DropZoneView: View {
                 .padding(24)
         )
         .animation(.easeInOut(duration: 0.15), value: isTargeted)
+    }
+}
+
+/// Icon, title and explanation for a file that couldn't be opened; mirrors
+/// the Quick Look preview's error state.
+private struct FailureView: View {
+    let message: LoadFailureMessage
+
+    var body: some View {
+        VStack(spacing: 6) {
+            Image(systemName: "exclamationmark.triangle")
+                .font(.system(size: 44))
+                .symbolRenderingMode(.hierarchical)
+                .foregroundStyle(.tertiary)
+                .accessibilityHidden(true)
+                .padding(.bottom, 6)
+            Text(message.title)
+                .font(.system(size: 17, weight: .semibold))
+            Text(message.detail)
+                .font(.system(size: 13))
+                .foregroundStyle(.secondary)
+        }
+        .multilineTextAlignment(.center)
+        .frame(maxWidth: 360)
+        .accessibilityElement(children: .combine)
     }
 }
 

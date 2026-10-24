@@ -143,6 +143,13 @@ solicitudes de funciones.
 
 ## Solución de problemas
 
+### Quick Look no funciona
+
+Abre Filament y elige **Ayuda › Quick Look Setup…** (o haz clic en **Quick
+Look not working?** en la ventana vacía). Te guía para previsualizar un modelo
+de ejemplo incluido y activar las extensiones de Filament en Ajustes del
+Sistema.
+
 ### STL/OBJ/PLY se abren en la vista previa de Apple en lugar de Filament
 
 Es la vista previa Hydra integrada de Apple en macOS 26+. Consulta

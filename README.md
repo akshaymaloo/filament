@@ -127,6 +127,12 @@ Planned work is tracked in [Issues](https://github.com/akshaymaloo/filament/issu
 
 ## Troubleshooting
 
+### Quick Look isn't working
+
+Open Filament and choose **Help › Quick Look Setup…** (or click **Quick Look
+not working?** on the empty window). It walks you through previewing a bundled
+sample and turning on Filament's extensions in System Settings.
+
 ### STL/OBJ/PLY open in Apple's preview instead of Filament
 
 That's Apple's built-in Hydra preview on macOS 26+. See

@@ -34,6 +34,9 @@ final class PreviewViewController: NSViewController, QLPreviewingController {
     private let fileNameLabel = NSTextField(labelWithString: "")
     private let plateControl = NSSegmentedControl()
 
+    // Shown instead of the scene when the file can't be previewed.
+    private let errorView = ErrorStateView()
+
     private var document: ModelDocument?
     private var url: URL?
     private var useModelColors = true
@@ -56,7 +59,17 @@ final class PreviewViewController: NSViewController, QLPreviewingController {
         configureBottomBar()
         container.addSubview(bottomEffectView)
 
+        errorView.translatesAutoresizingMaskIntoConstraints = false
+        errorView.isHidden = true
+        errorView.onOpenInApp = { [weak self] in self?.openInHostApp() }
+        container.addSubview(errorView)
+
         NSLayoutConstraint.activate([
+            errorView.topAnchor.constraint(equalTo: container.topAnchor),
+            errorView.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            errorView.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+            errorView.bottomAnchor.constraint(equalTo: container.bottomAnchor),
+
             scnView.topAnchor.constraint(equalTo: container.topAnchor),
             scnView.leadingAnchor.constraint(equalTo: container.leadingAnchor),
             scnView.trailingAnchor.constraint(equalTo: container.trailingAnchor),
@@ -151,23 +164,88 @@ final class PreviewViewController: NSViewController, QLPreviewingController {
         // unlimited, to still bound worst-case memory/time) rather than the
         // stricter budget used for the ambient thumbnail extension.
         let flag = CancellationFlag()
-        let document = try await withTaskCancellationHandler {
-            try await Task.detached(priority: .userInitiated) {
-                var options = ThreeMFLoader.Options.default
-                options.maxTriangles = 20_000_000
-                options.shouldCancel = { flag.isCancelled }
-                return try ModelLoader(options: options).load(url: url)
-            }.value
-        } onCancel: {
-            flag.cancel()
+        let fileName = url.lastPathComponent
+        // QL may reuse this controller, so drop any previous state first.
+        await MainActor.run { self.resetState() }
+
+        let document: ModelDocument
+        do {
+            document = try await withTaskCancellationHandler {
+                try await Task.detached(priority: .userInitiated) {
+                    var options = ThreeMFLoader.Options.default
+                    options.maxTriangles = 20_000_000
+                    options.shouldCancel = { flag.isCancelled }
+                    return try ModelLoader(options: options).load(url: url)
+                }.value
+            } onCancel: {
+                flag.cancel()
+            }
+        } catch {
+            if Task.isCancelled || LoadFailureMessage.isCancellation(error) {
+                throw error
+            }
+            let message = LoadFailureMessage(error: error, fileName: fileName)
+            await MainActor.run { self.showFailure(message, for: url) }
+            return
         }
 
         await MainActor.run {
+            guard !document.hasNoGeometry else {
+                self.showFailure(.emptyModel(fileName: fileName), for: url)
+                return
+            }
             self.document = document
             self.url = url
-            self.fileNameLabel.stringValue = url.lastPathComponent
+            self.fileNameLabel.stringValue = fileName
             self.configurePlateSelector()
-            self.displayPlate(at: 0)
+            self.displayPlate(at: self.plateControl.selectedSegment)
+        }
+    }
+
+    /// Returns to the normal (non-error) layout and forgets the previous file.
+    private func resetState() {
+        document = nil
+        url = nil
+        errorView.isHidden = true
+        scnView.isHidden = false
+        bottomEffectView.isHidden = false
+        overlayEffectView.isHidden = true
+        colorModeControl.isHidden = true
+        plateControl.isHidden = true
+        useModelColors = true
+        colorModeControl.selectedSegment = 0
+        currentPlateIndex = 0
+    }
+
+    private func showFailure(_ message: LoadFailureMessage, for url: URL) {
+        document = nil
+        self.url = url
+        scnView.isHidden = true
+        overlayEffectView.isHidden = true
+        bottomEffectView.isHidden = true
+        errorView.configure(message, canOpenInApp: message.suggestsOpeningInApp && Self.hostAppURL != nil)
+        errorView.isHidden = false
+    }
+
+    /// The containing `Filament.app` (`Filament.app/Contents/PlugIns/….appex`).
+    private static var hostAppURL: URL? {
+        var candidate = Bundle.main.bundleURL
+        while candidate.pathComponents.count > 1 {
+            candidate.deleteLastPathComponent()
+            if candidate.pathExtension == "app" { return candidate }
+        }
+        return nil
+    }
+
+    private func openInHostApp() {
+        guard let url, let appURL = Self.hostAppURL else {
+            errorView.showOpenInAppFallback()
+            return
+        }
+        NSWorkspace.shared.open([url], withApplicationAt: appURL, configuration: NSWorkspace.OpenConfiguration()) { [weak self] _, error in
+            guard error != nil else { return }
+            // The sandbox may refuse to launch the app; fall back to a text hint.
+            DispatchQueue.main.async { self?.errorView.showOpenInAppFallback() }
         }
     }
 
@@ -180,7 +258,7 @@ final class PreviewViewController: NSViewController, QLPreviewingController {
         }
         plateControl.isHidden = plates.count <= 1
         if !plates.isEmpty {
-            plateControl.selectedSegment = 0
+            plateControl.selectedSegment = plates.firstIndex { $0.mesh.triangleCount > 0 } ?? 0
         }
     }
 
@@ -260,5 +338,90 @@ private final class AppearanceObservingView: NSView {
     override func viewDidChangeEffectiveAppearance() {
         super.viewDidChangeEffectiveAppearance()
         onAppearanceChange?()
+    }
+}
+
+/// Native-looking "can't preview" state: a symbol, a title, a short
+/// explanation and, when useful, an "Open in Filament" button.
+private final class ErrorStateView: NSView {
+    var onOpenInApp: (() -> Void)?
+
+    private let iconView = NSImageView()
+    private let titleLabel = NSTextField(wrappingLabelWithString: "")
+    private let detailLabel = NSTextField(wrappingLabelWithString: "")
+    private let openButton = NSButton(title: "Open in Filament", target: nil, action: nil)
+    private let hintLabel = NSTextField(wrappingLabelWithString: LoadFailureMessage.openInAppHint)
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        wantsLayer = true
+
+        let symbol = NSImage(systemSymbolName: "exclamationmark.triangle", accessibilityDescription: nil)
+        let configuration = NSImage.SymbolConfiguration(pointSize: 44, weight: .regular)
+            .applying(NSImage.SymbolConfiguration(hierarchicalColor: .tertiaryLabelColor))
+        iconView.image = symbol?.withSymbolConfiguration(configuration)
+        iconView.setAccessibilityElement(false)
+
+        configure(titleLabel, font: .systemFont(ofSize: 17, weight: .semibold), color: .labelColor, maxLines: 3)
+        configure(detailLabel, font: .systemFont(ofSize: 13), color: .secondaryLabelColor, maxLines: 0)
+        configure(hintLabel, font: .systemFont(ofSize: 13), color: .secondaryLabelColor, maxLines: 0)
+
+        openButton.bezelStyle = .rounded
+        openButton.target = self
+        openButton.action = #selector(openTapped)
+
+        let stack = NSStackView(views: [iconView, titleLabel, detailLabel, openButton, hintLabel])
+        stack.orientation = .vertical
+        stack.alignment = .centerX
+        stack.spacing = 6
+        stack.setCustomSpacing(12, after: iconView)
+        stack.setCustomSpacing(16, after: detailLabel)
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(stack)
+
+        NSLayoutConstraint.activate([
+            stack.centerXAnchor.constraint(equalTo: centerXAnchor),
+            stack.centerYAnchor.constraint(equalTo: centerYAnchor),
+            stack.leadingAnchor.constraint(greaterThanOrEqualTo: leadingAnchor, constant: 24),
+            stack.trailingAnchor.constraint(lessThanOrEqualTo: trailingAnchor, constant: -24),
+            titleLabel.widthAnchor.constraint(lessThanOrEqualToConstant: 360),
+            detailLabel.widthAnchor.constraint(lessThanOrEqualToConstant: 360),
+            hintLabel.widthAnchor.constraint(lessThanOrEqualToConstant: 360)
+        ])
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
+
+    private func configure(_ label: NSTextField, font: NSFont, color: NSColor, maxLines: Int) {
+        label.font = font
+        label.textColor = color
+        label.alignment = .center
+        label.maximumNumberOfLines = maxLines
+        label.preferredMaxLayoutWidth = 360
+        label.isSelectable = false
+    }
+
+    func configure(_ message: LoadFailureMessage, canOpenInApp: Bool) {
+        titleLabel.stringValue = message.title
+        detailLabel.stringValue = message.detail
+        openButton.isHidden = !canOpenInApp
+        // Without a button, still tell the user how to view an oversized model.
+        hintLabel.isHidden = canOpenInApp || !message.suggestsOpeningInApp
+    }
+
+    func showOpenInAppFallback() {
+        openButton.isHidden = true
+        hintLabel.isHidden = false
+    }
+
+    @objc private func openTapped() {
+        onOpenInApp?()
+    }
+
+    override var wantsUpdateLayer: Bool { true }
+
+    override func updateLayer() {
+        layer?.backgroundColor = NSColor.windowBackgroundColor.cgColor
     }
 }

@@ -10,6 +10,14 @@ semantic versioning.
 
 ### Added
 
+- A "Couldn't Preview" state in Quick Look (and in the app) for files that
+  fail to load or contain no geometry, with plain-English explanations and an
+  "Open in Filament" button for models too large to preview, instead of a
+  blank panel.
+- A Quick Look setup window (shown on first launch, and under Help › Quick
+  Look Setup…) with a bundled multi-color sample model, a Quick Look preview
+  self-test and a shortcut to System Settings › Extensions. The sample is
+  regenerated with `scripts/make-sample-model.sh`.
 - Release pipeline support for Developer ID signing (hardened runtime,
   secure timestamp) and notarization with stapling for both the app and the
   DMG. `scripts/set-release-secrets.sh` configures the GitHub secrets; builds
@@ -17,6 +25,10 @@ semantic versioning.
 
 ### Changed
 
+- Load errors in the app now use the same friendly wording as Quick Look
+  (`LoadFailureMessage`) instead of developer-facing descriptions.
+- The thumbnail extension now reports an error for models with no geometry so
+  Finder keeps the generic icon.
 - Repository restructure for open-source readability: the SwiftPM package and
   library target were renamed `ThreeMFKit` → **`FilamentKit`** (product
   `three-mf-validate` → **`filament-validate`**), and format-agnostic public

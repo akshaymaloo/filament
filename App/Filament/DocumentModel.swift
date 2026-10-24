@@ -17,16 +17,26 @@ final class DocumentModel: ObservableObject {
     @Published private(set) var document: ModelDocument?
     @Published var selectedPlateIndex: Int = 0
     @Published private(set) var isLoading = false
-    @Published var errorMessage: String?
+    @Published private(set) var failure: LoadFailureMessage?
     @Published private(set) var fileURL: URL?
     /// Increments on every successful load. Used as a stable identity so the
     /// SceneKit view rebuilds even when two different documents share the same
     /// plate id (implicit single plates are always id 1).
     @Published private(set) var loadGeneration = 0
 
+    /// Set when the app was asked to open a file (Finder double-click, "Open
+    /// With"), which defers the first-run setup window.
+    private(set) var didReceiveOpenRequest = false
+
     /// Cancellation flag for whichever load is currently in flight, so a new
     /// `load(url:)` call can abandon a superseded one instead of racing it.
     private var currentLoadCancellationFlag: LoadCancellationFlag?
+
+    /// Loads a file the system asked the app to open.
+    func open(url: URL) {
+        didReceiveOpenRequest = true
+        load(url: url)
+    }
 
     /// Loads a 3MF/STL/OBJ/PLY file asynchronously and publishes the result.
     func load(url: URL) {
@@ -35,7 +45,7 @@ final class DocumentModel: ObservableObject {
         currentLoadCancellationFlag = flag
 
         isLoading = true
-        errorMessage = nil
+        failure = nil
         Task {
             do {
                 var options = ThreeMFLoader.Options.default
@@ -45,14 +55,23 @@ final class DocumentModel: ObservableObject {
                     try loader.load(url: url)
                 }.value
                 guard !flag.isCancelled else { return }
+                if doc.hasNoGeometry {
+                    self.document = nil
+                    self.fileURL = url
+                    self.failure = .emptyModel(fileName: url.lastPathComponent, context: .open)
+                    self.isLoading = false
+                    return
+                }
                 self.document = doc
                 self.selectedPlateIndex = 0
                 self.fileURL = url
                 self.loadGeneration += 1
                 self.isLoading = false
             } catch {
-                guard !flag.isCancelled else { return }
-                self.errorMessage = Self.describe(error)
+                guard !flag.isCancelled, !LoadFailureMessage.isCancellation(error) else { return }
+                self.document = nil
+                self.fileURL = url
+                self.failure = LoadFailureMessage(error: error, fileName: url.lastPathComponent, context: .open)
                 self.isLoading = false
             }
         }
@@ -67,19 +86,16 @@ final class DocumentModel: ObservableObject {
     func reset() {
         document = nil
         selectedPlateIndex = 0
-        errorMessage = nil
+        failure = nil
         fileURL = nil
     }
 
-    /// Sets a friendly error for dropped files whose extension isn't a supported model format.
-    func setUnsupportedFormatError() {
-        errorMessage = "Unsupported file type. Filament opens 3MF, STL, OBJ, and PLY files."
-    }
-
-    private static func describe(_ error: Error) -> String {
-        if let filamentError = error as? FilamentError {
-            return filamentError.description
-        }
-        return error.localizedDescription
+    /// Shows the unsupported-format message for a dropped file.
+    func setUnsupportedFormatError(fileName: String) {
+        currentLoadCancellationFlag?.cancel()
+        isLoading = false
+        document = nil
+        fileURL = nil
+        failure = .unsupportedFormat(fileName: fileName)
     }
 }

@@ -4,6 +4,10 @@ import AppKit
 import SceneKit
 import Metal
 
+private enum LoadFailureError: Error {
+    case emptyModel
+}
+
 final class ThumbnailProvider: QLThumbnailProvider {
     /// Wall-clock budget for the SceneKit fallback path (mesh parse +
     /// render); Quick Look kills extensions that run far longer than this,
@@ -61,7 +65,10 @@ final class ThumbnailProvider: QLThumbnailProvider {
         options.shouldCancel = { Date() > deadline }
 
         let document = try ModelLoader(options: options).load(url: request.fileURL)
-        guard let plate = document.plates.first else { return nil }
+        // An empty model is a failure, not a blank render, so Finder keeps the generic icon.
+        guard let plate = document.plates.first(where: { $0.mesh.triangleCount > 0 }) else {
+            throw LoadFailureError.emptyModel
+        }
 
         let scene = plate.makeScene()
         let renderer = SCNRenderer(device: device, options: nil)
