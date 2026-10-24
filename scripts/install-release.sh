@@ -226,8 +226,8 @@ ${DIM}
   • Double-click a file (or open the Filament app) to view it in a window.
   • If Space-bar previews don't appear immediately, log out/in once so Finder
     reloads the Quick Look extensions.
-  • To make Filament the default app: select a file in Finder, ⌘I (Get Info),
-    "Open with" > Filament > Change All.
+  • To make Filament the default app: open Filament and choose
+    Help > Quick Look Setup… > Make Filament the Default App.
   • To remove: curl -fsSL https://raw.githubusercontent.com/akshaymaloo/filament/main/scripts/install-release.sh | bash -s -- --uninstall${RESET}
 EOF
 }
