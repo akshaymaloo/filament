@@ -81,6 +81,14 @@ struct FilamentApp: App {
                 .keyboardShortcut("r", modifiers: [.command, .shift])
                 .disabled(model.fileURL == nil)
 
+                ForEach(Slicer.installed) { slicer in
+                    Button("Open in \(slicer.name)") {
+                        if let url = model.fileURL { slicer.open(url) }
+                    }
+                    .keyboardShortcut(slicer.shortcut)
+                    .disabled(model.document == nil)
+                }
+
                 Button("Close File") {
                     model.reset()
                 }

@@ -86,10 +86,19 @@ Filament adds **Finder thumbnails** and **interactive Quick Look previews**
 - **Open in the app.** Double-click a supported file (or drag-and-drop) to
   open it in the Filament window; drag another file in to swap the model
   instantly.
+- **Open in your slicer.** When Bambu Studio or QIDI Studio is installed, a
+  button for it appears in the top-right corner of the window and sends the
+  open model straight to that slicer — look at it, then slice it. Also under
+  **File**: ⌘↩ opens in Bambu Studio, ↩ opens in QIDI Studio. Slicers that
+  aren't installed are hidden.
+
+<p align="center">
+  <img src="docs/images/open-in-slicer.png" width="70%" alt="Filament window with Bambu Studio and QIDI Studio buttons in the top-right toolbar">
+</p>
 - **Fast on big models.** A dedicated streaming 3MF parser opens multi-
   million-triangle files in about a second.
-- **Keyboard shortcuts.** Open (⌘O), Reload (⌘R), Reveal in Finder (⇧⌘R), and
-  Close File (⌘W).
+- **Keyboard shortcuts.** Open (⌘O), Reload (⌘R), Reveal in Finder (⇧⌘R),
+  Open in Bambu Studio (⌘↩), Open in QIDI Studio (↩), and Close File (⌘W).
 - **Default opener.** `install.sh` makes Filament the default app for `.3mf`
   and `.stl` (skip with `--no-defaults`). For a downloaded build, select a
   file in Finder, press ⌘I and choose **Open with › Filament › Change All**.

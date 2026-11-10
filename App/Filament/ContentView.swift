@@ -22,6 +22,7 @@ struct ContentView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(.background)
+        .toolbar { OpenInSlicerToolbar(fileURL: model.document != nil ? model.fileURL : nil) }
         .task { await presentSetupOnFirstLaunch() }
         .onDrop(of: [.fileURL], isTargeted: $isTargeted) { providers in
             handleDrop(providers: providers)

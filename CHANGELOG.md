@@ -8,6 +8,13 @@ semantic versioning.
 
 ## [Unreleased]
 
+### Added
+
+- "Open in Bambu Studio" and "Open in QIDI Studio" buttons in the window
+  toolbar (top right), shown only for slicers installed on the Mac and only
+  while a model is loaded. Also in the File menu: ⌘↩ for Bambu Studio, ↩ for
+  QIDI Studio. The slicer list lives in `App/Filament/SlicerLauncher.swift`.
+
 ## [0.4.1] - 2026-10-24
 
 ### Added
