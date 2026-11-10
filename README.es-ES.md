@@ -96,10 +96,19 @@ para:
 - **Abrir en la aplicación.** Haz doble clic en un archivo compatible (o
   arrastra y suelta) para abrirlo en la ventana de Filament; arrastra otro
   archivo para cambiar el modelo al instante.
+- **Abrir en tu slicer.** Si Bambu Studio o QIDI Studio están instalados,
+  aparece un botón para cada uno en la esquina superior derecha de la ventana
+  que envía el modelo abierto directamente a ese slicer. También en
+  **Archivo**: ⌘↩ abre en Bambu Studio y ↩ abre en QIDI Studio. Los slicers
+  no instalados se ocultan.
+
+<p align="center">
+  <img src="docs/images/open-in-slicer.png" width="70%" alt="Ventana de Filament con los botones Bambu Studio y QIDI Studio en la barra de herramientas superior derecha">
+</p>
 - **Rápido con modelos grandes.** Un analizador 3MF de flujo dedicado abre
   archivos de millones de triángulos en aproximadamente un segundo.
-- **Atajos de teclado.** Abrir (⌘O), Recargar (⌘R), Revelar en Finder (⇧⌘R) y
-  Cerrar archivo (⌘W).
+- **Atajos de teclado.** Abrir (⌘O), Recargar (⌘R), Revelar en Finder (⇧⌘R),
+  Abrir en Bambu Studio (⌘↩), Abrir en QIDI Studio (↩) y Cerrar archivo (⌘W).
 - **Abre por defecto.** `install.sh` establece Filament como la aplicación
   predeterminada para `.3mf` y `.stl` (omítelo con `--no-defaults`). Con la
   versión descargada, selecciona un archivo en Finder, pulsa ⌘I y elige
